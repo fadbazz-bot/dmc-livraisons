@@ -15,7 +15,8 @@ import {
 } from "@shared/schema";
 import { eq, desc, and, gte, lte, ne } from "drizzle-orm";
 
-const sqlite = new Database("livraisons.db");
+const DB_PATH = process.env.NODE_ENV === "production" ? "/data/livraisons.db" : "livraisons.db";
+const sqlite = new Database(DB_PATH);
 export const db = drizzle(sqlite);
 
 // Création des tables
