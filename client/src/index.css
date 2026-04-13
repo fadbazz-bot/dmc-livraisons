@@ -1,0 +1,129 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* DMC Sénégal — Palette logistique : bleu marine pro + orange accent */
+    --background: 220 20% 97%;
+    --foreground: 220 25% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 25% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 25% 12%;
+
+    /* Bleu DMC — primaire */
+    --primary: 215 72% 28%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 14% 94%;
+    --secondary-foreground: 220 25% 25%;
+
+    --muted: 220 12% 95%;
+    --muted-foreground: 220 10% 48%;
+
+    /* Orange accent — actions urgentes / alertes */
+    --accent: 28 90% 52%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 44%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 12% 88%;
+    --input: 220 12% 88%;
+    --ring: 215 72% 28%;
+
+    --radius: 0.5rem;
+
+    /* Sidebar */
+    --sidebar-background: 220 30% 14%;
+    --sidebar-foreground: 220 15% 82%;
+    --sidebar-primary: 215 72% 62%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 25% 22%;
+    --sidebar-accent-foreground: 220 15% 90%;
+    --sidebar-border: 220 20% 20%;
+    --sidebar-ring: 215 72% 62%;
+
+    /* Statut couleurs */
+    --status-attente: 220 12% 70%;
+    --status-preparation: 200 80% 38%;
+    --status-prete: 142 65% 36%;
+    --status-zone: 28 90% 52%;
+    --status-partie: 215 72% 28%;
+    --status-annulee: 0 72% 44%;
+  }
+
+  .dark {
+    --background: 220 25% 8%;
+    --foreground: 220 12% 88%;
+
+    --card: 220 22% 11%;
+    --card-foreground: 220 12% 88%;
+
+    --popover: 220 22% 11%;
+    --popover-foreground: 220 12% 88%;
+
+    --primary: 215 72% 58%;
+    --primary-foreground: 220 30% 10%;
+
+    --secondary: 220 18% 16%;
+    --secondary-foreground: 220 12% 80%;
+
+    --muted: 220 18% 14%;
+    --muted-foreground: 220 10% 52%;
+
+    --accent: 28 85% 58%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 65% 52%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 18% 20%;
+    --input: 220 18% 20%;
+    --ring: 215 72% 58%;
+
+    --sidebar-background: 220 28% 8%;
+    --sidebar-foreground: 220 15% 75%;
+    --sidebar-primary: 215 72% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 22% 14%;
+    --sidebar-accent-foreground: 220 15% 88%;
+    --sidebar-border: 220 20% 14%;
+    --sidebar-ring: 215 72% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'DM Sans', 'Helvetica Neue', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  code, .mono {
+    font-family: 'DM Mono', monospace;
+  }
+}
+
+/* Badges statut */
+.badge-en_attente    { @apply bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400; }
+.badge-en_preparation{ @apply bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300; }
+.badge-prete         { @apply bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300; }
+.badge-en_zone       { @apply bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300; }
+.badge-partie        { @apply bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300; }
+.badge-annulee       { @apply bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300; }
+
+/* KPI card highlight */
+.kpi-ok  { @apply text-emerald-600 dark:text-emerald-400; }
+.kpi-warn{ @apply text-orange-500 dark:text-orange-400; }
+.kpi-bad { @apply text-red-600 dark:text-red-400; }
+
+/* Jalon timeline */
+.jalon-done    { @apply bg-emerald-500; }
+.jalon-current { @apply bg-blue-500 animate-pulse; }
+.jalon-pending { @apply bg-gray-300 dark:bg-gray-600; }
