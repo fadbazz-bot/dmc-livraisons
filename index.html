@@ -1,0 +1,1272 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DMC Livraisons</title>
+<style>
+:root {
+  --primary: #1a3a5c;
+  --primary-light: #2a5298;
+  --accent: #e67e22;
+  --success: #27ae60;
+  --warning: #f39c12;
+  --danger: #e74c3c;
+  --bg: #f0f4f8;
+  --card: #ffffff;
+  --border: #d1dbe8;
+  --text: #1a2332;
+  --muted: #6b7c93;
+  --radius: 10px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+/* Layout */
+.layout { display: flex; height: 100vh; }
+.sidebar { width: 240px; background: var(--primary); color: white; display: flex; flex-direction: column; flex-shrink: 0; }
+.main { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+.hidden { display: none !important; }
+
+/* Login */
+#login-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #1a3a5c 0%, #2a5298 100%); }
+.login-card { background: white; border-radius: 16px; padding: 40px; width: 380px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+.login-logo { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
+.login-logo svg { width: 44px; height: 44px; }
+.login-logo-text h1 { font-size: 20px; font-weight: 700; color: var(--primary); }
+.login-logo-text p { font-size: 12px; color: var(--muted); }
+.login-card label { display: block; font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+.login-card select { width: 100%; padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 14px; color: var(--text); background: white; margin-bottom: 20px; }
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 10px 18px; border-radius: 8px; font-size: 14px; font-weight: 600; border: none; cursor: pointer; transition: all 0.15s; }
+.btn-primary { background: var(--primary); color: white; width: 100%; justify-content: center; }
+.btn-primary:hover { background: var(--primary-light); }
+.btn-success { background: var(--success); color: white; }
+.btn-success:hover { filter: brightness(1.1); }
+.btn-warning { background: var(--warning); color: white; }
+.btn-danger { background: var(--danger); color: white; }
+.btn-outline { background: white; color: var(--primary); border: 1.5px solid var(--border); }
+.btn-outline:hover { border-color: var(--primary); }
+.btn-sm { padding: 6px 12px; font-size: 13px; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.error-msg { color: var(--danger); font-size: 13px; margin-top: 8px; }
+
+/* Sidebar */
+.sidebar-logo { padding: 20px 16px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 10px; }
+.sidebar-logo svg { width: 32px; height: 32px; }
+.sidebar-logo-text { font-size: 15px; font-weight: 700; line-height: 1.2; }
+.sidebar-logo-text span { font-size: 11px; opacity: 0.6; font-weight: 400; display: block; }
+.sidebar-user { padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+.sidebar-user-name { font-size: 13px; font-weight: 600; }
+.sidebar-user-role { font-size: 11px; opacity: 0.6; margin-top: 2px; }
+.sidebar-nav { flex: 1; padding: 8px 0; }
+.nav-section { padding: 12px 16px 4px; font-size: 10px; font-weight: 700; opacity: 0.4; text-transform: uppercase; letter-spacing: 0.08em; }
+.nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 16px; font-size: 13px; cursor: pointer; transition: background 0.1s; border-radius: 0; color: rgba(255,255,255,0.75); }
+.nav-item:hover { background: rgba(255,255,255,0.08); color: white; }
+.nav-item.active { background: rgba(255,255,255,0.15); color: white; font-weight: 600; }
+.nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+.sidebar-bottom { padding: 12px 16px; border-top: 1px solid rgba(255,255,255,0.1); }
+.sidebar-bottom button { background: none; border: none; color: rgba(255,255,255,0.6); font-size: 13px; cursor: pointer; padding: 6px 0; }
+.sidebar-bottom button:hover { color: white; }
+
+/* Header */
+.page-header { background: var(--card); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+.page-title { font-size: 17px; font-weight: 700; color: var(--primary); }
+.page-subtitle { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+/* Cards */
+.page-content { padding: 24px; flex: 1; }
+.card { background: var(--card); border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 16px; }
+.card-header { padding: 16px 20px 12px; border-bottom: 1px solid var(--border); }
+.card-title { font-size: 14px; font-weight: 700; color: var(--primary); }
+.card-body { padding: 16px 20px; }
+.card-cmd { transition: box-shadow 0.15s; }
+.card-cmd:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+.card-retard { border-left: 3px solid var(--warning); }
+
+/* Grid */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+
+/* Form */
+.form-group { margin-bottom: 16px; }
+.form-label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; color: var(--text); }
+.form-label span { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 4px; }
+.form-input, .form-select, .form-textarea { width: 100%; padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 14px; color: var(--text); background: white; transition: border-color 0.15s; }
+.form-input:focus, .form-select:focus, .form-textarea:focus { outline: none; border-color: var(--primary-light); box-shadow: 0 0 0 3px rgba(42,82,152,0.1); }
+.form-textarea { resize: vertical; min-height: 80px; }
+.form-hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.form-error { font-size: 12px; color: var(--danger); margin-top: 4px; }
+
+/* Expedition group */
+.exp-group { background: var(--bg); border: 1.5px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
+.exp-row { display: flex; gap: 10px; align-items: flex-end; }
+.exp-row .form-group { margin-bottom: 0; flex: 1; }
+.exp-remove { flex-shrink: 0; }
+
+/* Badge */
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.badge-en_attente  { background: #FEF3C7; color: #92400E; }
+.badge-feu_vert    { background: #D1FAE5; color: #065F46; }
+.badge-prete       { background: #DBEAFE; color: #1E40AF; }
+.badge-sortie      { background: #F3F4F6; color: #374151; }
+.badge-terminee    { background: #D1FAE5; color: #065F46; }
+
+/* Timeline jalons */
+.jalon-track { display: flex; align-items: center; gap: 0; margin: 12px 0; }
+.jalon-step { display: flex; flex-direction: column; align-items: center; position: relative; flex: 1; }
+.jalon-step:not(:last-child)::after { content: ''; position: absolute; top: 14px; left: 50%; width: 100%; height: 2px; background: var(--border); z-index: 0; }
+.jalon-step.done::after { background: var(--success); }
+.jalon-dot { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--border); background: white; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: var(--muted); z-index: 1; position: relative; }
+.jalon-step.done .jalon-dot { background: var(--success); border-color: var(--success); color: white; }
+.jalon-step.current .jalon-dot { background: var(--primary); border-color: var(--primary); color: white; animation: pulse 2s infinite; }
+.jalon-label { font-size: 10px; font-weight: 600; margin-top: 4px; color: var(--muted); text-align: center; }
+.jalon-time { font-size: 10px; color: var(--muted); margin-top: 1px; }
+.jalon-step.done .jalon-label { color: var(--success); }
+.jalon-step.current .jalon-label { color: var(--primary); }
+@keyframes pulse { 0%,100%{box-shadow:0 0 0 0 rgba(26,58,92,0.4)} 50%{box-shadow:0 0 0 6px rgba(26,58,92,0)} }
+
+/* Duree pill */
+.duree-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.duree-ok { background: #D1FAE5; color: #065F46; }
+.duree-warn { background: #FEF3C7; color: #92400E; }
+.duree-bad { background: #FEE2E2; color: #991B1B; }
+
+/* KPI cards */
+.kpi-card { background: var(--card); border-radius: var(--radius); border: 1px solid var(--border); padding: 20px; text-align: center; }
+.kpi-value { font-size: 36px; font-weight: 800; line-height: 1; }
+.kpi-label { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.kpi-ok { color: var(--success); }
+.kpi-warn { color: var(--warning); }
+.kpi-bad { color: var(--danger); }
+
+/* Table */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { background: var(--bg); padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); border-bottom: 1px solid var(--border); }
+td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: rgba(240,244,248,0.6); }
+
+/* Empty state */
+.empty { text-align: center; padding: 48px 20px; color: var(--muted); }
+.empty svg { width: 40px; height: 40px; margin: 0 auto 12px; opacity: 0.3; display: block; }
+.empty p { font-size: 14px; }
+
+/* Modal */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+.modal { background: white; border-radius: 14px; max-width: 560px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+.modal-header { padding: 20px 24px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+.modal-title { font-size: 16px; font-weight: 700; color: var(--primary); }
+.modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--muted); line-height: 1; }
+.modal-body { padding: 20px 24px; }
+.modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; gap: 10px; justify-content: flex-end; }
+
+/* Motifs checklist */
+.motif-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.motif-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; border: 1.5px solid var(--border); cursor: pointer; font-size: 13px; transition: all 0.1s; }
+.motif-item:hover { border-color: var(--primary-light); background: rgba(42,82,152,0.04); }
+.motif-item.selected { border-color: var(--warning); background: #FEF3C7; }
+.motif-item input { accent-color: var(--warning); }
+
+/* Photo preview */
+.photo-preview { width: 100%; max-height: 160px; object-fit: contain; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); margin-top: 8px; }
+
+/* Toast */
+.toast { position: fixed; bottom: 24px; right: 24px; background: var(--primary); color: white; padding: 12px 20px; border-radius: 10px; font-size: 14px; font-weight: 500; box-shadow: 0 8px 24px rgba(0,0,0,0.2); z-index: 9999; animation: slideUp 0.3s ease; max-width: 340px; }
+.toast.success { background: var(--success); }
+.toast.error { background: var(--danger); }
+@keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+/* Loader */
+.loader { display: inline-block; width: 18px; height: 18px; border: 2.5px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Retard alerte */
+.alert { padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; display: flex; gap: 8px; align-items: flex-start; }
+.alert-warning { background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; }
+.alert-danger { background: #FEE2E2; color: #991B1B; border: 1px solid #FECACA; }
+.alert-info { background: #EFF6FF; color: #1E40AF; border: 1px solid #BFDBFE; }
+
+/* Scan zone */
+.scan-zone { border: 2px dashed var(--border); border-radius: 8px; padding: 16px; text-align: center; cursor: pointer; transition: all 0.15s; }
+.scan-zone:hover { border-color: var(--primary-light); background: rgba(42,82,152,0.04); }
+.scan-zone.active { border-color: var(--success); background: rgba(39,174,96,0.04); }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .sidebar { display: none; }
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">
+      <svg viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="44" height="44" rx="10" fill="#1a3a5c"/>
+        <rect x="8" y="18" width="28" height="16" rx="3" fill="white" opacity="0.15"/>
+        <rect x="8" y="18" width="28" height="16" rx="3" fill="none" stroke="white" stroke-width="1.5"/>
+        <path d="M14 18v-4a8 8 0 0 1 16 0v4" stroke="white" stroke-width="2" stroke-linecap="round"/>
+        <circle cx="15" cy="30" r="2.5" fill="#e67e22"/>
+        <circle cx="29" cy="30" r="2.5" fill="#e67e22"/>
+        <path d="M20 27h4" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      <div class="login-logo-text">
+        <h1>DMC Livraisons</h1>
+        <span>Gestion des expéditions</span>
+      </div>
+    </div>
+    <label for="login-select">Compte</label>
+    <select id="login-select">
+      <option value="">Sélectionnez votre compte…</option>
+      <option value="Fadell.bazzouni@dmcsen.com">Fadel Bazzouni (Admin)</option>
+      <option value="commercial1@dmcsen.com">Ndeye Fatou (Commercial)</option>
+      <option value="commercial2@dmcsen.com">Fatou Sow (Commercial)</option>
+      <option value="responsable1@dmcsen.com">Ibrahima Ndoye (Resp. Showroom)</option>
+      <option value="responsable2@dmcsen.com">Ousmane Fall (Resp. Quincaillerie)</option>
+      <option value="responsable3@dmcsen.com">Modou Thiam (Resp. Parc Acier)</option>
+      <option value="chef_poste@dmcsen.com">Abdou Diop (Chef de Poste)</option>
+      <option value="controleur1@dmcsen.com">Mamadou Ba (Contrôleur)</option>
+    </select>
+    <button class="btn btn-primary" onclick="doLogin()">
+      <svg viewBox="0 0 16 16" fill="currentColor" width="14"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0zm0 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zm0 3a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm0 6a5.5 5.5 0 0 1-4.6-2.5C3.6 7 5.6 6 8 6s4.4 1 4.6 2.5A5.5 5.5 0 0 1 8 10.5z"/></svg>
+      Se connecter
+    </button>
+    <p class="error-msg hidden" id="login-error">Compte introuvable. Vérifiez votre sélection.</p>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app" class="layout hidden">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <svg viewBox="0 0 32 32" fill="none" width="32" height="32">
+        <rect width="32" height="32" rx="7" fill="white" opacity="0.15"/>
+        <path d="M6 13h20M6 19h20M10 13v6M22 13v6" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+        <circle cx="11" cy="22" r="2" fill="#e67e22"/>
+        <circle cx="21" cy="22" r="2" fill="#e67e22"/>
+      </svg>
+      <div class="sidebar-logo-text">DMC Livraisons <span>Gestion expéditions</span></div>
+    </div>
+    <div class="sidebar-user">
+      <div class="sidebar-user-name" id="sb-user-name">—</div>
+      <div class="sidebar-user-role" id="sb-user-role">—</div>
+    </div>
+    <nav class="sidebar-nav" id="sidebar-nav"></nav>
+    <div class="sidebar-bottom">
+      <button onclick="doLogout()">⬅ Déconnexion</button>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <div id="page-container"></div>
+  </main>
+</div>
+
+<!-- MODALS -->
+<div id="modal-container"></div>
+<div id="toast-container"></div>
+
+<script>
+// ─── CONFIG ─────────────────────────────────────────────────────────────────
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxJ7zAiWOGniCg1dSDRfwEtO8oJifKIMNSaLfPtsoU4C-XT-hJehAc3g-Jx37pWWSyc/exec"; // ← À remplacer après déploiement
+
+const ZONES = ["Showroom", "Parc Acier", "Dépôt Quincaillerie"];
+const SITES = ["Dakar", "Diamniadio"];
+const ROLE_LABELS = {
+  admin: "Administrateur", commercial: "Commercial",
+  responsable: "Resp. Prépa/Livraison", chef_poste: "Chef de Poste",
+  controleur: "Contrôleur"
+};
+
+// ─── STATE ───────────────────────────────────────────────────────────────────
+let currentUser = null;
+let currentPage = null;
+let allCommandes = [];
+let allMotifs = [];
+let refreshInterval = null;
+
+// ─── API ─────────────────────────────────────────────────────────────────────
+async function api(action, params = {}) {
+  const url = new URL(SCRIPT_URL);
+  url.searchParams.set("action", action);
+  // GET params for simple reads, POST for mutations
+  const isMutation = ["createCommande","jalon_t0","jalon_t1","jalon_t2","jalon_t3",
+    "feuVert","justifierRetard","addMotifRetard","updateMotifRetard","addExpedition"].includes(action);
+  let res;
+  if (isMutation) {
+    res = await fetch(SCRIPT_URL + "?action=" + action, {
+      method: "POST", body: JSON.stringify({action, ...params}),
+      headers: {"Content-Type":"application/json"},
+      redirect: "follow",
+    });
+  } else {
+    Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, v));
+    res = await fetch(url.toString(), { redirect: "follow" });
+  }
+  const json = await res.json();
+  if (json.error) throw new Error(json.error);
+  return json;
+}
+
+// ─── AUTH ────────────────────────────────────────────────────────────────────
+async function doLogin() {
+  const email = document.getElementById("login-select").value;
+  if (!email) return showErr("login-error");
+  try {
+    const user = await api("login", { email });
+    if (user.error) { showErr("login-error"); return; }
+    currentUser = user;
+    startApp();
+  } catch(e) { showErr("login-error"); }
+}
+
+function doLogout() {
+  currentUser = null;
+  clearInterval(refreshInterval);
+  document.getElementById("app").classList.add("hidden");
+  document.getElementById("login-screen").classList.remove("hidden");
+  document.getElementById("login-select").value = "";
+}
+
+function showErr(id) { document.getElementById(id).classList.remove("hidden"); }
+
+// ─── APP INIT ────────────────────────────────────────────────────────────────
+async function startApp() {
+  document.getElementById("login-screen").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  document.getElementById("login-error").classList.add("hidden");
+
+  document.getElementById("sb-user-name").textContent = currentUser.nom;
+  document.getElementById("sb-user-role").textContent = ROLE_LABELS[currentUser.role] || currentUser.role;
+
+  buildSidebar();
+  allMotifs = await api("getMotifsRetard");
+
+  // Page par défaut selon le rôle
+  const defaults = {
+    commercial: "file",
+    responsable: "responsable",
+    chef_poste: "poste-garde",
+    controleur: "dashboard",
+    admin: "file",
+  };
+  navigateTo(defaults[currentUser.role] || "file");
+
+  // Rafraîchissement auto toutes les 30s
+  refreshInterval = setInterval(() => { if (currentPage) renderCurrentPage(); }, 30000);
+}
+
+function buildSidebar() {
+  const role = currentUser.role;
+  const nav = [
+    { id: "file", label: "File des expéditions", icon: iconList, roles: ["commercial","responsable","chef_poste","admin","controleur"] },
+    { id: "nouvelle-demande", label: "Nouvelle demande", icon: iconPlus, roles: ["commercial","admin"] },
+    { id: "responsable", label: "Prépa & Livraison", icon: iconWrench, roles: ["responsable","admin"] },
+    { id: "poste-garde", label: "Poste de Garde", icon: iconShield, roles: ["chef_poste","admin"] },
+    { id: "dashboard", label: "Dashboard KPI", icon: iconChart, roles: ["admin","controleur","responsable","chef_poste"] },
+    { id: "config", label: "Configuration", icon: iconSettings, roles: ["admin"] },
+  ];
+  const filtered = nav.filter(n => n.roles.includes(role));
+  document.getElementById("sidebar-nav").innerHTML = filtered.map(n => `
+    <div class="nav-item" id="nav-${n.id}" onclick="navigateTo('${n.id}')">
+      ${n.icon()} <span>${n.label}</span>
+    </div>
+  `).join("");
+}
+
+function navigateTo(page) {
+  document.querySelectorAll(".nav-item").forEach(el => el.classList.remove("active"));
+  const navEl = document.getElementById("nav-" + page);
+  if (navEl) navEl.classList.add("active");
+  currentPage = page;
+  renderCurrentPage();
+}
+
+async function renderCurrentPage() {
+  const pages = {
+    "file": renderFile,
+    "nouvelle-demande": renderNouvelleDemande,
+    "responsable": renderResponsable,
+    "poste-garde": renderPosteGarde,
+    "dashboard": renderDashboard,
+    "config": renderConfig,
+  };
+  const fn = pages[currentPage];
+  if (fn) await fn();
+}
+
+// ─── PAGE : FILE DES EXPÉDITIONS ─────────────────────────────────────────────
+async function renderFile() {
+  const container = document.getElementById("page-container");
+  container.innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="page-title">File des expéditions</div>
+        <div class="page-subtitle" id="file-subtitle">Chargement…</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select class="form-select" style="width:160px" id="filter-statut" onchange="renderFile()">
+          <option value="">Tous les statuts</option>
+          <option value="en_attente">En attente</option>
+          <option value="feu_vert">Feu vert</option>
+          <option value="prete">Prête</option>
+          <option value="sortie">Sortie</option>
+        </select>
+        <select class="form-select" style="width:160px" id="filter-zone" onchange="renderFile()">
+          <option value="">Toutes les zones</option>
+          ${ZONES.map(z=>`<option value="${z}">${z}</option>`).join("")}
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="renderFile()">↻ Actualiser</button>
+      </div>
+    </div>
+    <div class="page-content">
+      <div id="file-list"><div class="empty"><p>Chargement…</p></div></div>
+    </div>
+  `;
+
+  try {
+    const params = {};
+    const filtStatut = document.getElementById("filter-statut")?.value;
+    const filtZone = document.getElementById("filter-zone")?.value;
+    if (filtStatut) params.statut = filtStatut;
+    if (filtZone) params.zone = filtZone;
+    if (currentUser.role === "responsable" && currentUser.zone) params.zone = params.zone || currentUser.zone;
+
+    allCommandes = await api("getCommandes", params);
+    const total = allCommandes.reduce((a,c) => a + (c.expeditions?.length||0), 0);
+    document.getElementById("file-subtitle").textContent = `${total} expédition(s) · ${allCommandes.length} commande(s)`;
+
+    if (!allCommandes.length) {
+      document.getElementById("file-list").innerHTML = `<div class="empty">${iconPackage()}<p>Aucune expédition trouvée</p></div>`;
+      return;
+    }
+
+    document.getElementById("file-list").innerHTML = allCommandes.map(cmd => renderCmdCard(cmd)).join("");
+  } catch(e) {
+    document.getElementById("file-list").innerHTML = `<div class="empty"><p>Erreur : ${e.message}</p></div>`;
+  }
+}
+
+function renderCmdCard(cmd) {
+  const exps = cmd.expeditions || [];
+  const enRetard = exps.some(e => {
+    if (!e.t0 || e.statut === "sortie") return false;
+    const mins = Math.round((Date.now() - new Date(e.t0)) / 60000);
+    return mins > 30;
+  });
+
+  return `
+    <div class="card card-cmd ${enRetard ? "card-retard" : ""}" style="margin-bottom:14px">
+      <div class="card-body">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+          <div>
+            <span style="font-weight:700;font-size:15px;color:var(--primary)">${cmd.numCmdNav || "Sans N° Cmd"}</span>
+            <span style="color:var(--muted);font-size:13px;margin-left:8px">${cmd.site || ""}</span>
+            ${enRetard ? '<span style="color:var(--warning);font-size:12px;font-weight:600;margin-left:8px">⏰ Retard</span>' : ""}
+          </div>
+          <span style="font-size:12px;color:var(--muted)">${fmtDateTime(cmd.createdAt)}</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          ${exps.map(exp => renderExpRow(exp, cmd)).join("")}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderExpRow(exp, cmd) {
+  const duree = exp.t0 ? Math.round((Date.now() - new Date(exp.t0)) / 60000) : null;
+  const dureeT03 = exp.t0 && exp.t3 ? Math.round((new Date(exp.t3) - new Date(exp.t0)) / 60000) : null;
+  const enRetard = duree !== null && !exp.t3 && duree > 30;
+  const dureeClass = dureeT03 !== null ? (dureeT03 <= 30 ? "duree-ok" : "duree-bad") : (enRetard ? "duree-warn" : "");
+
+  return `
+    <div style="background:var(--bg);border-radius:8px;padding:12px 14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-weight:700;font-family:monospace;font-size:14px">${exp.numExpedition}</span>
+          <span style="font-size:12px;color:var(--muted)">${exp.zone}</span>
+          ${exp.statut !== "sortie" && duree !== null ? `<span class="duree-pill ${dureeClass}">${fmtDuree(duree)}</span>` : ""}
+          ${dureeT03 !== null ? `<span class="duree-pill ${dureeClass}">✓ ${fmtDuree(dureeT03)}</span>` : ""}
+        </div>
+        ${renderBadge(exp.statut)}
+      </div>
+      ${renderJalonTrack(exp)}
+      ${renderExpActions(exp, cmd)}
+    </div>
+  `;
+}
+
+function renderJalonTrack(exp) {
+  const jalons = [
+    { key:"t0", label:"T0", desc:"Instruction" },
+    { key:"t1", label:"T1", desc:"Feu vert" },
+    { key:"t2", label:"T2", desc:"Fin prépa" },
+    { key:"t3", label:"T3", desc:"Sortie" },
+  ];
+  const currentIdx = jalons.reduce((acc, j, i) => exp[j.key] ? i : acc, -1);
+  return `
+    <div class="jalon-track">
+      ${jalons.map((j, i) => `
+        <div class="jalon-step ${i <= currentIdx ? "done" : ""} ${i === currentIdx+1 ? "current" : ""}">
+          <div class="jalon-dot">${i <= currentIdx ? "✓" : j.label}</div>
+          <div class="jalon-label">${j.desc}</div>
+          ${exp[j.key] ? `<div class="jalon-time">${fmtTime(exp[j.key])}</div>` : ""}
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderExpActions(exp, cmd) {
+  const role = currentUser.role;
+  const actions = [];
+
+  // Commercial : feu vert T1
+  if ((role === "commercial" || role === "admin") && exp.t0 && !exp.t1 && exp.statut === "en_attente") {
+    actions.push(`<button class="btn btn-success btn-sm" onclick="openFeuVert('${exp.id}','${exp.numExpedition}')">✅ Donner le feu vert</button>`);
+  }
+  // Responsable : T2
+  if ((role === "responsable" || role === "admin") && exp.t1 && !exp.t2) {
+    actions.push(`<button class="btn btn-warning btn-sm" onclick="openT2('${exp.id}','${exp.numExpedition}')">📦 Fin de livraison parc</button>`);
+  }
+  // Chef poste : T3
+  if ((role === "chef_poste" || role === "admin") && exp.t2 && !exp.t3) {
+    actions.push(`<button class="btn btn-primary btn-sm" onclick="openT3('${exp.id}','${exp.numExpedition}')">🚗 Valider sortie</button>`);
+  }
+  // Responsable : justifier retard (si sortie sans motif et retard)
+  if ((role === "responsable" || role === "admin") && exp.t3 && !exp.motifRetard) {
+    const dureeT03 = exp.t0 && exp.t3 ? Math.round((new Date(exp.t3) - new Date(exp.t0)) / 60000) : 0;
+    if (dureeT03 > 30) {
+      actions.push(`<button class="btn btn-danger btn-sm" onclick="openJustifRetard('${exp.id}','${exp.numExpedition}')">⚠️ Justifier retard</button>`);
+    }
+  }
+
+  if (!actions.length) return "";
+  return `<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">${actions.join("")}</div>`;
+}
+
+// ─── PAGE : NOUVELLE DEMANDE ──────────────────────────────────────────────────
+async function renderNouvelleDemande() {
+  document.getElementById("page-container").innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="page-title">Nouvelle demande</div>
+        <div class="page-subtitle">Instruction de préparation (T0) — ${currentUser.nom}</div>
+      </div>
+    </div>
+    <div class="page-content">
+      <div style="max-width:600px">
+        <div class="card">
+          <div class="card-header"><div class="card-title">Informations commande</div></div>
+          <div class="card-body">
+            <div class="grid-2">
+              <div class="form-group">
+                <label class="form-label">N° Commande NAV <span>(optionnel)</span></label>
+                <input class="form-input" id="nd-cmdnav" placeholder="CV-MC2502353" oninput="autoFormat(this,'CV-MC')">
+                <div class="form-hint">Format : CV-MC suivi des chiffres</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Site *</label>
+                <select class="form-select" id="nd-site">
+                  <option value="">Choisir…</option>
+                  ${SITES.map(s=>`<option value="${s}">${s}</option>`).join("")}
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-top:8px">
+              <label class="form-label">Expéditions *</label>
+              <div id="exp-list"></div>
+              <button class="btn btn-outline btn-sm" onclick="addExpField()" style="margin-top:8px">
+                + Ajouter une expédition
+              </button>
+              <div class="form-hint">Chaque N° EX correspond à un dépôt de livraison distinct</div>
+            </div>
+
+            <div id="nd-error" class="form-error hidden"></div>
+
+            <div style="display:flex;gap:10px;margin-top:8px">
+              <button class="btn btn-outline" onclick="navigateTo('file')">Annuler</button>
+              <button class="btn btn-primary" id="nd-submit" onclick="submitNouvelleDemande()">
+                🚀 Envoyer l'instruction de préparation
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  addExpField(); // Premier champ expédition
+}
+
+function addExpField() {
+  const list = document.getElementById("exp-list");
+  const idx = list.children.length;
+  const div = document.createElement("div");
+  div.className = "exp-group";
+  div.id = `exp-group-${idx}`;
+  div.innerHTML = `
+    <div class="exp-row">
+      <div class="form-group">
+        <label class="form-label">N° Expédition *</label>
+        <input class="form-input exp-num" placeholder="EX-2504664" oninput="autoFormat(this,'EX-')">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Zone de livraison *</label>
+        <select class="form-select exp-zone">
+          <option value="">Choisir…</option>
+          ${ZONES.map(z=>`<option value="${z}">${z}</option>`).join("")}
+        </select>
+      </div>
+      ${idx > 0 ? `<button class="btn btn-danger btn-sm exp-remove" onclick="removeExpField(${idx})" style="margin-bottom:0;flex-shrink:0">✕</button>` : ""}
+    </div>
+  `;
+  list.appendChild(div);
+}
+
+function removeExpField(idx) {
+  document.getElementById(`exp-group-${idx}`)?.remove();
+}
+
+function autoFormat(input, prefix) {
+  let v = input.value.toUpperCase();
+  if (!v.startsWith(prefix)) {
+    v = prefix + v.replace(new RegExp("^" + prefix, "i"), "");
+  }
+  input.value = v;
+}
+
+async function submitNouvelleDemande() {
+  const numCmdNav = document.getElementById("nd-cmdnav").value.trim();
+  const site = document.getElementById("nd-site").value;
+  const errEl = document.getElementById("nd-error");
+
+  // Collecter les expéditions
+  const expGroups = document.querySelectorAll(".exp-group");
+  const expeditions = [];
+  let valid = true;
+
+  expGroups.forEach(g => {
+    const num = g.querySelector(".exp-num").value.trim();
+    const zone = g.querySelector(".exp-zone").value;
+    if (!num || !zone) { valid = false; return; }
+    if (!num.match(/^EX-\d+$/)) { valid = false; return; }
+    expeditions.push({ numExpedition: num, zone });
+  });
+
+  if (!site) { errEl.textContent = "Veuillez choisir un site."; errEl.classList.remove("hidden"); return; }
+  if (!valid || !expeditions.length) { errEl.textContent = "Vérifiez les N° d'expédition (format EX-XXXXX) et les zones."; errEl.classList.remove("hidden"); return; }
+
+  errEl.classList.add("hidden");
+  const btn = document.getElementById("nd-submit");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loader"></span> Envoi…';
+
+  try {
+    await api("createCommande", {
+      numCmdNav: numCmdNav || "",
+      site,
+      commercialEmail: currentUser.email,
+      commercialNom: currentUser.nom,
+      expeditions,
+    });
+    showToast("Instruction envoyée — notification Chat envoyée", "success");
+    navigateTo("file");
+  } catch(e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove("hidden");
+    btn.disabled = false;
+    btn.innerHTML = '🚀 Envoyer l\'instruction de préparation';
+  }
+}
+
+// ─── PAGE : RESPONSABLE ──────────────────────────────────────────────────────
+async function renderResponsable() {
+  const container = document.getElementById("page-container");
+  container.innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="page-title">Prépa & Livraison</div>
+        <div class="page-subtitle">${currentUser.zone ? currentUser.zone : "Toutes les zones"} · ${currentUser.nom}</div>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="renderResponsable()">↻</button>
+    </div>
+    <div class="page-content">
+      <div id="resp-list"><div class="empty"><p>Chargement…</p></div></div>
+    </div>
+  `;
+
+  try {
+    const params = { statut: "feu_vert" };
+    if (currentUser.zone) params.zone = currentUser.zone;
+    const all = await api("getExpeditions", params);
+
+    if (!all.length) {
+      document.getElementById("resp-list").innerHTML = `<div class="empty">${iconWrench()}<p>Aucune expédition avec feu vert</p></div>`;
+      return;
+    }
+
+    document.getElementById("resp-list").innerHTML = all.map(exp => `
+      <div class="card card-cmd" style="margin-bottom:12px">
+        <div class="card-body">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div>
+              <span style="font-weight:700;font-family:monospace;font-size:15px">${exp.numExpedition}</span>
+              <span style="color:var(--muted);margin-left:8px;font-size:13px">${exp.zone}</span>
+            </div>
+            ${renderBadge(exp.statut)}
+          </div>
+          ${renderJalonTrack(exp)}
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button class="btn btn-warning btn-sm" onclick="openT2('${exp.id}','${exp.numExpedition}')">
+              📦 Enregistrer fin de livraison parc
+            </button>
+          </div>
+        </div>
+      </div>
+    `).join("");
+  } catch(e) {
+    document.getElementById("resp-list").innerHTML = `<div class="empty"><p>Erreur : ${e.message}</p></div>`;
+  }
+}
+
+// ─── PAGE : POSTE DE GARDE ────────────────────────────────────────────────────
+async function renderPosteGarde() {
+  const container = document.getElementById("page-container");
+  container.innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="page-title">Poste de Garde</div>
+        <div class="page-subtitle">Validations de sortie · ${currentUser.nom}</div>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="renderPosteGarde()">↻</button>
+    </div>
+    <div class="page-content">
+      <div id="garde-list"><div class="empty"><p>Chargement…</p></div></div>
+    </div>
+  `;
+
+  try {
+    const exps = await api("getExpeditions", { statut: "prete" });
+    if (!exps.length) {
+      document.getElementById("garde-list").innerHTML = `<div class="empty">${iconShield()}<p>Aucune expédition prête à sortir</p></div>`;
+      return;
+    }
+    document.getElementById("garde-list").innerHTML = exps.map(exp => {
+      const duree = exp.t0 ? Math.round((Date.now() - new Date(exp.t0)) / 60000) : null;
+      const enRetard = duree !== null && duree > 30;
+      return `
+        <div class="card card-cmd ${enRetard ? "card-retard" : ""}" style="margin-bottom:12px">
+          <div class="card-body">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+              <div>
+                <span style="font-weight:700;font-family:monospace;font-size:15px">${exp.numExpedition}</span>
+                <span style="color:var(--muted);margin-left:8px;font-size:13px">${exp.zone}</span>
+                ${enRetard ? `<span class="duree-pill duree-bad" style="margin-left:8px">${fmtDuree(duree)}</span>` : ""}
+              </div>
+              ${renderBadge(exp.statut)}
+            </div>
+            ${renderJalonTrack(exp)}
+            <div style="margin-top:10px">
+              <button class="btn btn-success btn-sm" onclick="openT3('${exp.id}','${exp.numExpedition}')">
+                🚗 Valider la sortie du véhicule
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join("");
+  } catch(e) {
+    document.getElementById("garde-list").innerHTML = `<div class="empty"><p>Erreur : ${e.message}</p></div>`;
+  }
+}
+
+// ─── PAGE : DASHBOARD ─────────────────────────────────────────────────────────
+async function renderDashboard() {
+  const today = new Date().toISOString().slice(0,10);
+  document.getElementById("page-container").innerHTML = `
+    <div class="page-header">
+      <div><div class="page-title">Dashboard KPI</div></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="date" class="form-input" id="kpi-from" value="${today}" style="width:150px">
+        <span style="color:var(--muted)">→</span>
+        <input type="date" class="form-input" id="kpi-to" value="${today}" style="width:150px">
+        <select class="form-select" id="kpi-zone" style="width:180px">
+          <option value="">Toutes les zones</option>
+          ${ZONES.map(z=>`<option value="${z}">${z}</option>`).join("")}
+        </select>
+        <button class="btn btn-primary btn-sm" onclick="loadKpi()">Appliquer</button>
+      </div>
+    </div>
+    <div class="page-content">
+      <div id="kpi-container"><div class="empty"><p>Sélectionnez une période et cliquez Appliquer</p></div></div>
+    </div>
+  `;
+
+  // Filtre zone auto pour contrôleurs/responsables
+  if (currentUser.zone) {
+    const sel = document.getElementById("kpi-zone");
+    if (sel) sel.value = currentUser.zone;
+  }
+  loadKpi();
+}
+
+async function loadKpi() {
+  const dateDebut = document.getElementById("kpi-from").value;
+  const dateFin = document.getElementById("kpi-to").value;
+  const zone = document.getElementById("kpi-zone").value;
+
+  document.getElementById("kpi-container").innerHTML = `<div class="empty"><p>Chargement…</p></div>`;
+  try {
+    const params = { dateDebut, dateFin };
+    if (zone) params.zone = zone;
+    const kpi = await api("getKpi", params);
+
+    document.getElementById("kpi-container").innerHTML = `
+      <div class="grid-3" style="margin-bottom:20px">
+        <div class="kpi-card">
+          <div class="kpi-value">${kpi.totalExpeditions}</div>
+          <div class="kpi-label">Expéditions totales</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-value ${kpiColor(kpi.pct30min)}">${kpi.pct30min !== null ? kpi.pct30min + "%" : "—"}</div>
+          <div class="kpi-label">≤ 30 min (T0→T3)</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-value">${kpi.moyenneService !== null ? fmtDuree(kpi.moyenneService) : "—"}</div>
+          <div class="kpi-label">Durée moyenne service</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-value">${kpi.medianeService !== null ? fmtDuree(kpi.medianeService) : "—"}</div>
+          <div class="kpi-label">Durée médiane</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-value">${kpi.moyenneAttenteFeuVert !== null ? fmtDuree(kpi.moyenneAttenteFeuVert) : "—"}</div>
+          <div class="kpi-label">Attente feu vert (T0→T1)</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-value">${kpi.terminees}</div>
+          <div class="kpi-label">Sorties validées</div>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-bottom:20px">
+        <div class="card">
+          <div class="card-header"><div class="card-title">Par zone de livraison</div></div>
+          <div class="card-body">
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Zone</th><th>Total</th><th>≤ 30 min</th><th>Taux</th><th>Moy.</th></tr></thead>
+                <tbody>
+                  ${(kpi.parZone||[]).map(z => `
+                    <tr>
+                      <td>${z.zone}</td><td>${z.total}</td>
+                      <td>${z.sous30}</td>
+                      <td><span class="duree-pill ${z.total ? kpiColorClass(z.total ? Math.round(z.sous30/z.total*100):null) : ""}">${z.total ? Math.round(z.sous30/z.total*100)+"%" : "—"}</span></td>
+                      <td>${z.moyenneMins !== null ? fmtDuree(z.moyenneMins) : "—"}</td>
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><div class="card-title">Top motifs de retard</div></div>
+          <div class="card-body">
+            ${(kpi.topMotifs||[]).length ? kpi.topMotifs.map(m => `
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
+                <span style="font-size:13px">${m.motif}</span>
+                <span style="font-weight:700;color:var(--danger)">${m.count}</span>
+              </div>
+            `).join("") : '<p style="color:var(--muted);font-size:13px">Aucun retard sur la période</p>'}
+          </div>
+        </div>
+      </div>
+    `;
+  } catch(e) {
+    document.getElementById("kpi-container").innerHTML = `<div class="empty"><p>Erreur : ${e.message}</p></div>`;
+  }
+}
+
+// ─── PAGE : CONFIGURATION ─────────────────────────────────────────────────────
+async function renderConfig() {
+  document.getElementById("page-container").innerHTML = `
+    <div class="page-header">
+      <div><div class="page-title">Configuration</div></div>
+    </div>
+    <div class="page-content">
+      <div style="max-width:600px">
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header"><div class="card-title">Test Webhook Google Chat</div></div>
+          <div class="card-body">
+            <button class="btn btn-primary" onclick="doTestWebhook()">🔔 Envoyer un message de test</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+            <div class="card-title">Motifs de retard</div>
+            <button class="btn btn-success btn-sm" onclick="openAddMotif()">+ Ajouter</button>
+          </div>
+          <div class="card-body">
+            <div id="motifs-list">Chargement…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  loadMotifsList();
+}
+
+async function loadMotifsList() {
+  const motifs = await api("getMotifsRetard");
+  document.getElementById("motifs-list").innerHTML = motifs.length
+    ? `<div class="table-wrap"><table>
+        <thead><tr><th>Libellé</th><th>Catégorie</th><th></th></tr></thead>
+        <tbody>${motifs.map(m => `
+          <tr>
+            <td>${m.libelle}</td>
+            <td><span style="color:var(--muted);font-size:12px">${m.categorie}</span></td>
+            <td><button class="btn btn-danger btn-sm" onclick="desactiverMotif('${m.id}')">Désactiver</button></td>
+          </tr>
+        `).join("")}</tbody>
+      </table></div>`
+    : "<p style='color:var(--muted);font-size:13px'>Aucun motif</p>";
+}
+
+async function doTestWebhook() {
+  try {
+    await api("testWebhook");
+    showToast("Message de test envoyé ✅", "success");
+  } catch(e) { showToast("Erreur : " + e.message, "error"); }
+}
+
+function openAddMotif() {
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">Ajouter un motif de retard</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Libellé *</label>
+        <input class="form-input" id="motif-libelle" placeholder="Ex: Panne véhicule">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Catégorie</label>
+        <select class="form-select" id="motif-cat">
+          <option value="stock">Stock / Arrivage</option>
+          <option value="transport">Transport</option>
+          <option value="client">Client</option>
+          <option value="organisation" selected>Organisation</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-success" onclick="submitAddMotif()">Ajouter</button>
+    </div>
+  `);
+}
+
+async function submitAddMotif() {
+  const libelle = document.getElementById("motif-libelle").value.trim();
+  const categorie = document.getElementById("motif-cat").value;
+  if (!libelle) return;
+  await api("addMotifRetard", { libelle, categorie });
+  allMotifs = await api("getMotifsRetard");
+  closeModal();
+  showToast("Motif ajouté", "success");
+  loadMotifsList();
+}
+
+async function desactiverMotif(id) {
+  await api("updateMotifRetard", { id, actif: false });
+  allMotifs = await api("getMotifsRetard");
+  loadMotifsList();
+}
+
+// ─── MODALS ────────────────────────────────────────────────────────────────────
+
+// Feu vert (T1)
+function openFeuVert(expId, numExp) {
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">✅ Donner le feu vert — ${numExp}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-info">
+        Le client est arrivé. En confirmant, vous autorisez la livraison.
+        Le responsable de dépôt pourra alors enregistrer la fin de livraison.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-success" onclick="submitFeuVert('${expId}')">✅ Confirmer le feu vert</button>
+    </div>
+  `);
+}
+
+async function submitFeuVert(expId) {
+  try {
+    await api("feuVert", { expId, acteurEmail: currentUser.email, acteurNom: currentUser.nom });
+    closeModal();
+    showToast("Feu vert accordé — notification envoyée", "success");
+    renderCurrentPage();
+  } catch(e) { showToast("Erreur : " + e.message, "error"); }
+}
+
+// T2 — Fin livraison parc
+function openT2(expId, numExp) {
+  const now = new Date().toISOString().slice(0,16);
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">📦 Fin de livraison parc — ${numExp}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Heure de fin de livraison *</label>
+        <input type="datetime-local" class="form-input" id="t2-heure" value="${now}">
+        <div class="form-hint">Saisissez l'heure NAV ou laissez à maintenant</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-warning" onclick="submitT2('${expId}')">📦 Enregistrer</button>
+    </div>
+  `);
+}
+
+async function submitT2(expId) {
+  const heureT2 = document.getElementById("t2-heure").value;
+  try {
+    await api("jalon_t2", { expId, acteurEmail: currentUser.email, acteurNom: currentUser.nom, heureT2 });
+    closeModal();
+    showToast("T2 enregistré — en attente poste de garde", "success");
+    renderCurrentPage();
+  } catch(e) { showToast("Erreur : " + e.message, "error"); }
+}
+
+// T3 — Sortie poste de garde
+function openT3(expId, numExp) {
+  const motifsHtml = allMotifs.map(m => `
+    <label class="motif-item" onclick="this.classList.toggle('selected');this.querySelector('input').checked=!this.querySelector('input').checked">
+      <input type="checkbox" value="${m.libelle}" style="display:none"> ${m.libelle}
+    </label>
+  `).join("");
+
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">🚗 Validation sortie — ${numExp}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">Plaque d'immatriculation *</label>
+          <input class="form-input" id="t3-plaque" placeholder="DK-1234-A" oninput="this.value=this.value.toUpperCase()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nom du chauffeur</label>
+          <input class="form-input" id="t3-chauffeur" placeholder="Prénom Nom">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">N° Bon de Livraison * <span>(scan QR ou saisie)</span></label>
+        <div style="display:flex;gap:8px">
+          <input class="form-input" id="t3-bl" placeholder="BL-2504664 ou scanner…" style="font-family:monospace">
+          <button class="btn btn-outline btn-sm" onclick="activateScan()" title="Mode scan douchette">⬛ QR</button>
+        </div>
+        <div id="scan-status" class="form-hint hidden" style="color:var(--success)">Mode scan actif — pointez la douchette vers le QR code</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Photo du BL <span>(facultatif)</span></label>
+        <div class="scan-zone" onclick="document.getElementById('t3-photo-input').click()">
+          📷 Appuyez pour prendre une photo ou importer
+          <input type="file" id="t3-photo-input" accept="image/*" capture="environment" class="hidden" onchange="previewPhoto(this)">
+        </div>
+        <img id="t3-photo-preview" class="photo-preview hidden">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Motifs de retard <span>(obligatoire si > 30 min)</span></label>
+        <div class="motif-grid">${motifsHtml}</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Commentaire</label>
+        <textarea class="form-textarea" id="t3-commentaire" rows="2" placeholder="Précisions sur le retard…"></textarea>
+      </div>
+      <div id="t3-error" class="form-error hidden"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-success" onclick="submitT3('${expId}')">✅ Confirmer la sortie</button>
+    </div>
+  `);
+}
+
+function activateScan() {
+  const input = document.getElementById("t3-bl");
+  const status = document.getElementById("scan-status");
+  input.focus();
+  status.classList.remove("hidden");
+}
+
+function previewPhoto(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = document.getElementById("t3-photo-preview");
+    img.src = e.target.result;
+    img.classList.remove("hidden");
+  };
+  reader.readAsDataURL(file);
+}
+
+async function submitT3(expId) {
+  const plaque = document.getElementById("t3-plaque").value.trim();
+  const chauffeur = document.getElementById("t3-chauffeur").value.trim();
+  const numeroBL = document.getElementById("t3-bl").value.trim();
+  const commentaire = document.getElementById("t3-commentaire").value.trim();
+  const photoBlUrl = document.getElementById("t3-photo-preview").src || "";
+  const errEl = document.getElementById("t3-error");
+
+  const selectedMotifs = [...document.querySelectorAll(".motif-item.selected input")].map(i => i.value);
+
+  if (!plaque) { errEl.textContent = "Plaque d'immatriculation obligatoire."; errEl.classList.remove("hidden"); return; }
+  if (!numeroBL) { errEl.textContent = "N° de Bon de Livraison obligatoire."; errEl.classList.remove("hidden"); return; }
+
+  errEl.classList.add("hidden");
+
+  try {
+    await api("jalon_t3", {
+      expId,
+      acteurEmail: currentUser.email,
+      acteurNom: currentUser.nom,
+      plaque,
+      chauffeur,
+      numeroBL,
+      photoBlUrl: photoBlUrl.startsWith("data:") ? photoBlUrl : "",
+      motifRetard: selectedMotifs,
+      commentaireRetard: commentaire,
+    });
+    closeModal();
+    showToast("Sortie validée (T3) — notification envoyée", "success");
+    renderCurrentPage();
+  } catch(e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove("hidden");
+  }
+}
+
+// Justifier retard
+function openJustifRetard(expId, numExp) {
+  const motifsHtml = allMotifs.map(m => `
+    <label class="motif-item" onclick="this.classList.toggle('selected');this.querySelector('input').checked=!this.querySelector('input').checked">
+      <input type="checkbox" value="${m.libelle}" style="display:none"> ${m.libelle}
+    </label>
+  `).join("");
+
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">⚠️ Justifier retard — ${numExp}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-warning">Cette expédition est sortie avec un délai supérieur à 30 minutes. Veuillez justifier le retard.</div>
+      <div class="form-group">
+        <label class="form-label">Motif(s) *</label>
+        <div class="motif-grid">${motifsHtml}</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Commentaire</label>
+        <textarea class="form-textarea" id="justif-commentaire" rows="2"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-warning" onclick="submitJustif('${expId}')">Enregistrer</button>
+    </div>
+  `);
+}
+
+async function submitJustif(expId) {
+  const motifs = [...document.querySelectorAll(".motif-item.selected input")].map(i => i.value);
+  const commentaire = document.getElementById("justif-commentaire").value;
+  if (!motifs.length) { showToast("Choisissez au moins un motif", "error"); return; }
+  await api("justifierRetard", { expId, motifRetard: motifs, commentaireRetard: commentaire, acteurEmail: currentUser.email });
+  closeModal();
+  showToast("Retard justifié", "success");
+  renderCurrentPage();
+}
+
+// ─── MODAL HELPERS ────────────────────────────────────────────────────────────
+function openModal(html) {
+  document.getElementById("modal-container").innerHTML = `
+    <div class="modal-overlay" onclick="closeModalIfOverlay(event)">
+      <div class="modal">${html}</div>
+    </div>
+  `;
+}
+function closeModal() { document.getElementById("modal-container").innerHTML = ""; }
+function closeModalIfOverlay(e) { if (e.target.classList.contains("modal-overlay")) closeModal(); }
+
+// ─── UTILS ───────────────────────────────────────────────────────────────────
+function showToast(msg, type = "") {
+  const el = document.createElement("div");
+  el.className = "toast " + type;
+  el.textContent = msg;
+  document.getElementById("toast-container").appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+function fmtTime(iso) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleTimeString("fr-FR", {hour:"2-digit", minute:"2-digit"});
+}
+function fmtDateTime(iso) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("fr-FR", {day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+}
+function fmtDuree(mins) {
+  if (mins === null || mins === undefined) return "—";
+  if (mins < 60) return mins + " min";
+  return Math.floor(mins/60) + "h" + String(mins%60).padStart(2,"0");
+}
+function kpiColor(pct) {
+  if (pct === null) return "";
+  if (pct >= 80) return "kpi-ok";
+  if (pct >= 60) return "kpi-warn";
+  return "kpi-bad";
+}
+function kpiColorClass(pct) {
+  if (pct === null) return "";
+  if (pct >= 80) return "duree-ok";
+  if (pct >= 60) return "duree-warn";
+  return "duree-bad";
+}
+function renderBadge(statut) {
+  const labels = { en_attente:"En attente", feu_vert:"✅ Feu vert", prete:"Prête", sortie:"Sortie", terminee:"Terminée" };
+  return `<span class="badge badge-${statut}">${labels[statut] || statut}</span>`;
+}
+
+// ─── ICONS ───────────────────────────────────────────────────────────────────
+function iconList() { return '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 4h12M2 8h12M2 12h8"/></svg>'.replace(/><\//g,'> stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></');}
+function iconPlus() { return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>`; }
+function iconWrench() { return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10.5 1.5a4 4 0 0 1-4 6L2 12a1.5 1.5 0 0 0 2 2l4.5-4.5a4 4 0 0 1 6-4l-2 2-1-1 1-1-1-1z"/></svg>`; }
+function iconShield() { return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1l6 2v5c0 3-2.5 5.5-6 7C2.5 13.5 0 11 0 8V3l8-2z"/></svg>`; }
+function iconChart() { return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 12l4-5 3 3 4-7"/><path d="M1 15h14"/></svg>`; }
+function iconSettings() { return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2"/></svg>`; }
+function iconPackage() { return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4l6-3 6 3v8l-6 3-6-3V4z"/><path d="M8 1v14M2 4l6 3 6-3"/></svg>`; }
+</script>
+</body>
+</html>
