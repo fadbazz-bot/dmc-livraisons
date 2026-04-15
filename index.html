@@ -71,6 +71,17 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .nav-badge { background: #e74c3c; color: white; font-size: 10px; font-weight: 700; border-radius: 10px; padding: 1px 6px; min-width: 18px; text-align: center; margin-left: auto; animation: pulse 2s infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* Sélection multiple */
+.exp-selectable { cursor:pointer; }
+.exp-selectable:hover { box-shadow: 0 0 0 2px var(--primary-light); }
+.exp-selectable.selected { box-shadow: 0 0 0 2px var(--success); background: #f0fdf4; }
+.exp-checkbox { width:18px; height:18px; cursor:pointer; accent-color: var(--success); flex-shrink:0; }
+.bulk-bar { position:sticky; bottom:0; background:var(--primary); color:white; padding:12px 24px; display:flex; align-items:center; gap:12px; z-index:100; border-top:2px solid var(--primary-light); }
+.bulk-bar-count { font-weight:700; font-size:14px; flex:1; }
+.search-bar { position:relative; }
+.search-bar input { padding-left:32px; }
+.search-bar svg { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--muted); pointer-events:none; }
+
 /* Header */
 .page-header { background: var(--card); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
 .page-title { font-size: 17px; font-weight: 700; color: var(--primary); }
@@ -183,6 +194,17 @@ tr:hover td { background: rgba(240,244,248,0.6); }
 /* Loader */
 .loader { display: inline-block; width: 18px; height: 18px; border: 2.5px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Sélection multiple */
+.exp-selectable { cursor:pointer; }
+.exp-selectable:hover { box-shadow: 0 0 0 2px var(--primary-light); }
+.exp-selectable.selected { box-shadow: 0 0 0 2px var(--success); background: #f0fdf4; }
+.exp-checkbox { width:18px; height:18px; cursor:pointer; accent-color: var(--success); flex-shrink:0; }
+.bulk-bar { position:sticky; bottom:0; background:var(--primary); color:white; padding:12px 24px; display:flex; align-items:center; gap:12px; z-index:100; border-top:2px solid var(--primary-light); }
+.bulk-bar-count { font-weight:700; font-size:14px; flex:1; }
+.search-bar { position:relative; }
+.search-bar input { padding-left:32px; }
+.search-bar svg { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--muted); pointer-events:none; }
 
 /* Retard alerte */
 .alert { padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; display: flex; gap: 8px; align-items: flex-start; }
@@ -458,6 +480,7 @@ async function refreshBadgeRetard() {
 }
 
 function navigateTo(page) {
+  selectedExpIds.clear();
   document.querySelectorAll(".nav-item").forEach(el => el.classList.remove("active"));
   const navEl = document.getElementById("nav-" + page);
   if (navEl) navEl.classList.add("active");
@@ -504,8 +527,19 @@ async function renderFile() {
         <button class="btn btn-outline btn-sm" onclick="renderFile()">↻ Actualiser</button>
       </div>
     </div>
-    <div class="page-content">
+    <div style="padding:0 24px 12px;background:var(--card);border-bottom:1px solid var(--border)">
+      <div class="search-bar" style="max-width:380px">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.099zm-5.242 1.656a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11z"/></svg>
+        <input class="form-input" id="search-exp" placeholder="Rechercher N° EX, commande, zone…" oninput="filterFile()" style="font-size:13px">
+      </div>
+    </div>
+    <div class="page-content" style="padding-bottom:80px">
       <div id="file-list"><div class="empty"><p>Chargement…</p></div></div>
+    </div>
+    <div id="bulk-bar" class="bulk-bar hidden">
+      <span class="bulk-bar-count" id="bulk-count">0 sélectionnée(s)</span>
+      <button class="btn btn-outline btn-sm" style="color:white;border-color:rgba(255,255,255,0.4)" onclick="clearSelection()">✕ Désélectionner tout</button>
+      <button class="btn btn-success btn-sm" id="bulk-action-btn" onclick="openBulkAction()">Valider la sélection</button>
     </div>
   `;
 
@@ -532,6 +566,221 @@ async function renderFile() {
   }
 }
 
+// ─── SÉLECTION MULTIPLE ───────────────────────────────────────────────────────
+let selectedExpIds = new Set();
+
+function updateBulkBar() {
+  const bar = document.getElementById("bulk-bar");
+  const countEl = document.getElementById("bulk-count");
+  const btn = document.getElementById("bulk-action-btn");
+  if (!bar) return;
+  const n = selectedExpIds.size;
+  if (n === 0) { bar.classList.add("hidden"); return; }
+  bar.classList.remove("hidden");
+  countEl.textContent = n + " expédition(s) sélectionnée(s)";
+  // Détecter le type d'action selon les exps sélectionnées
+  const allExps = allCommandes.flatMap(c => c.expeditions || []);
+  const sel = [...selectedExpIds].map(id => allExps.find(e => e.id === id)).filter(Boolean);
+  const role = currentUser.role;
+  if ((role === "commercial" || role === "admin") && sel.every(e => e.t0 && !e.t1 && e.statut === "en_attente")) {
+    btn.textContent = "✅ Feu vert groupé";
+  } else if ((role === "responsable" || role === "admin") && sel.every(e => e.t1 && !e.t2)) {
+    btn.textContent = "📦 Fin de livraison parc groupée";
+  } else if ((role === "chef_poste" || role === "admin") && sel.every(e => e.t2 && !e.t3)) {
+    btn.textContent = "🚗 Valider sortie groupée";
+  } else {
+    btn.textContent = "Valider la sélection (" + n + ")";
+  }
+}
+
+function toggleExpSelection(expId, el) {
+  if (selectedExpIds.has(expId)) {
+    selectedExpIds.delete(expId);
+    el.classList.remove("selected");
+  } else {
+    selectedExpIds.add(expId);
+    el.classList.add("selected");
+  }
+  updateBulkBar();
+}
+
+function clearSelection() {
+  selectedExpIds.clear();
+  document.querySelectorAll(".exp-selectable.selected").forEach(el => el.classList.remove("selected"));
+  document.querySelectorAll(".exp-checkbox").forEach(cb => cb.checked = false);
+  updateBulkBar();
+}
+
+function filterFile() {
+  const q = (document.getElementById("search-exp")?.value || "").toLowerCase().trim();
+  if (!q) {
+    document.querySelectorAll(".cmd-card-wrap").forEach(el => el.style.display = "");
+    document.querySelectorAll(".exp-row-wrap").forEach(el => el.style.display = "");
+    return;
+  }
+  document.querySelectorAll(".cmd-card-wrap").forEach(cardEl => {
+    let anyVisible = false;
+    cardEl.querySelectorAll(".exp-row-wrap").forEach(rowEl => {
+      const text = rowEl.dataset.search || "";
+      const visible = text.includes(q);
+      rowEl.style.display = visible ? "" : "none";
+      if (visible) anyVisible = true;
+    });
+    cardEl.style.display = anyVisible ? "" : "none";
+  });
+}
+
+// ─── ACTIONS GROUPÉES ─────────────────────────────────────────────────────────
+function openBulkAction() {
+  const allExps = allCommandes.flatMap(c => c.expeditions || []);
+  const sel = [...selectedExpIds].map(id => allExps.find(e => e.id === id)).filter(Boolean);
+  if (!sel.length) return;
+  const role = currentUser.role;
+  const nums = sel.map(e => e.numExpedition).join(", ");
+
+  if ((role === "commercial" || role === "admin") && sel.every(e => e.t0 && !e.t1 && e.statut === "en_attente")) {
+    openBulkFeuVert(sel, nums);
+  } else if ((role === "responsable" || role === "admin") && sel.every(e => e.t1 && !e.t2)) {
+    openBulkT2(sel, nums);
+  } else if ((role === "chef_poste" || role === "admin") && sel.every(e => e.t2 && !e.t3)) {
+    openBulkT3(sel, nums);
+  } else {
+    showToast("Sélection mixte — toutes les expéditions doivent être au même stade", "error");
+  }
+}
+
+function openBulkFeuVert(exps, nums) {
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">✅ Feu vert groupé — ${exps.length} expédition(s)</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-info">Le client est arrivé. Vous allez donner le feu vert pour :</div>
+      <div style="margin:12px 0;padding:10px;background:var(--bg);border-radius:8px;font-family:monospace;font-size:13px">${nums}</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-success" onclick="submitBulkFeuVert()">✅ Confirmer le feu vert</button>
+    </div>
+  `);
+}
+
+async function submitBulkFeuVert() {
+  const ids = [...selectedExpIds];
+  let ok = 0, errors = [];
+  for (const expId of ids) {
+    try {
+      await api("feuVert", { expId, acteurEmail: currentUser.email, acteurNom: currentUser.nom });
+      ok++;
+    } catch(e) { errors.push(e.message); }
+  }
+  closeModal();
+  clearSelection();
+  showToast(ok + " feu(x) vert(s) accordé(s)" + (errors.length ? " · " + errors.length + " erreur(s)" : ""), ok ? "success" : "error");
+  renderCurrentPage();
+}
+
+function openBulkT2(exps, nums) {
+  const nowVal = new Date().toISOString().slice(0,16);
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">📦 Fin de livraison parc — ${exps.length} expédition(s)</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="margin-bottom:12px;padding:10px;background:var(--bg);border-radius:8px;font-family:monospace;font-size:13px">${nums}</div>
+      <div class="form-group">
+        <label class="form-label">Heure de fin de livraison *</label>
+        <input type="datetime-local" class="form-input" id="bulk-t2-heure" value="${nowVal}">
+        <div class="form-hint">Cette heure sera appliquée à toutes les expéditions sélectionnées</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-warning" onclick="submitBulkT2()">📦 Enregistrer</button>
+    </div>
+  `);
+}
+
+async function submitBulkT2() {
+  const heureT2 = document.getElementById("bulk-t2-heure").value;
+  const ids = [...selectedExpIds];
+  let ok = 0, errors = [];
+  for (const expId of ids) {
+    try {
+      await api("jalon_t2", { expId, acteurEmail: currentUser.email, acteurNom: currentUser.nom, heureT2 });
+      ok++;
+    } catch(e) { errors.push(e.message); }
+  }
+  closeModal();
+  clearSelection();
+  showToast(ok + " T2 enregistré(s)" + (errors.length ? " · " + errors.length + " erreur(s)" : ""), ok ? "success" : "error");
+  renderCurrentPage();
+}
+
+function openBulkT3(exps, nums) {
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">🚗 Validation sortie groupée — ${exps.length} expédition(s)</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="margin-bottom:12px;padding:10px;background:var(--bg);border-radius:8px;font-family:monospace;font-size:13px">${nums}</div>
+      <div class="alert alert-info" style="margin-bottom:12px">Un même véhicule pour toutes ces expéditions — la plaque et le BL seront identiques.</div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">Plaque *</label>
+          <input class="form-input" id="bulk-t3-plaque" placeholder="DK-1234-A" oninput="this.value=this.value.toUpperCase()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Chauffeur</label>
+          <input class="form-input" id="bulk-t3-chauffeur" placeholder="Prénom Nom">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">N° Bon de Livraison *</label>
+        <input class="form-input" id="bulk-t3-bl" placeholder="BL-2504664" style="font-family:monospace">
+      </div>
+      <div id="bulk-t3-error" class="form-error hidden"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-success" onclick="submitBulkT3()">✅ Confirmer la sortie</button>
+    </div>
+  `);
+}
+
+async function submitBulkT3() {
+  const plaque = document.getElementById("bulk-t3-plaque").value.trim();
+  const chauffeur = document.getElementById("bulk-t3-chauffeur").value.trim();
+  const numeroBL = document.getElementById("bulk-t3-bl").value.trim();
+  const errEl = document.getElementById("bulk-t3-error");
+  if (!plaque) { errEl.textContent = "Plaque obligatoire."; errEl.classList.remove("hidden"); return; }
+  if (!numeroBL) { errEl.textContent = "N° BL obligatoire."; errEl.classList.remove("hidden"); return; }
+  errEl.classList.add("hidden");
+
+  const ids = [...selectedExpIds];
+  let ok = 0, retards = 0, errors = [];
+  for (const expId of ids) {
+    try {
+      const result = await api("jalon_t3", {
+        expId, acteurEmail: currentUser.email, acteurNom: currentUser.nom,
+        plaque, chauffeur, numeroBL, photoBlUrl: "",
+      });
+      ok++;
+      if (result.enRetard) retards++;
+    } catch(e) { errors.push(e.message); }
+  }
+  closeModal();
+  clearSelection();
+  let msg = ok + " sortie(s) validée(s)";
+  if (retards) msg += " · " + retards + " en retard";
+  if (errors.length) msg += " · " + errors.length + " erreur(s)";
+  showToast(msg, ok ? (retards ? "warning" : "success") : "error");
+  renderCurrentPage();
+}
+
 function renderCmdCard(cmd) {
   const exps = cmd.expeditions || [];
   const enRetard = exps.some(e => {
@@ -541,7 +790,7 @@ function renderCmdCard(cmd) {
   });
 
   return `
-    <div class="card card-cmd ${enRetard ? "card-retard" : ""}" style="margin-bottom:14px">
+    <div class="cmd-card-wrap card card-cmd ${enRetard ? "card-retard" : ""}" style="margin-bottom:14px">
       <div class="card-body">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
           <div>
@@ -566,9 +815,10 @@ function renderExpRow(exp, cmd) {
   const dureeClass = dureeT03 !== null ? (dureeT03 <= 30 ? "duree-ok" : "duree-bad") : (enRetard ? "duree-warn" : "");
 
   return `
-    <div style="background:var(--bg);border-radius:8px;padding:12px 14px">
+    <div class="exp-row-wrap exp-selectable" data-search="${(exp.numExpedition + ' ' + exp.zone + ' ' + (cmd.numCmdNav||'') + ' ' + (cmd.site||'')).toLowerCase()}" data-exp-id="${exp.id}" onclick="handleExpRowClick(event,'${exp.id}',this)" style="background:var(--bg);border-radius:8px;padding:12px 14px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div style="display:flex;align-items:center;gap:8px">
+          ${canSelectExp(exp) ? '<input type="checkbox" class="exp-checkbox" onclick="event.stopPropagation();toggleExpSelection(''+exp.id+'',this.closest('.exp-selectable'))" ' + (false ? 'checked' : '') + '>' : ''}
           <span style="font-weight:700;font-family:monospace;font-size:14px">${exp.numExpedition}</span>
           <span style="font-size:12px;color:var(--muted)">${exp.zone}</span>
           ${exp.statut !== "sortie" && duree !== null ? `<span class="duree-pill ${dureeClass}">${fmtDuree(duree)}</span>` : ""}
@@ -580,6 +830,26 @@ function renderExpRow(exp, cmd) {
       ${renderExpActions(exp, cmd)}
     </div>
   `;
+}
+
+function canSelectExp(exp) {
+  const role = currentUser.role;
+  if ((role === "commercial" || role === "admin") && exp.t0 && !exp.t1 && exp.statut === "en_attente") return true;
+  if ((role === "responsable" || role === "admin") && exp.t1 && !exp.t2) return true;
+  if ((role === "chef_poste" || role === "admin") && exp.t2 && !exp.t3) return true;
+  return false;
+}
+
+function handleExpRowClick(event, expId, el) {
+  // Ignorer les clics sur des boutons ou inputs
+  if (event.target.tagName === "BUTTON" || event.target.tagName === "INPUT" || event.target.tagName === "SELECT" || event.target.closest("button")) return;
+  // Trouver l'exp
+  const allExps = allCommandes.flatMap(c => c.expeditions || []);
+  const exp = allExps.find(e => e.id === expId);
+  if (!exp || !canSelectExp(exp)) return;
+  const cb = el.querySelector(".exp-checkbox");
+  if (cb) { cb.checked = !cb.checked; }
+  toggleExpSelection(expId, el);
 }
 
 function renderJalonTrack(exp) {
