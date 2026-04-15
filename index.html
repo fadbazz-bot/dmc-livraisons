@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DMC Livraisons</title>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://accounts.google.com/gsi/client"></script>
 <style>
 :root {
   --primary: #1a3a5c;
@@ -336,20 +336,37 @@ async function api(action, params = {}) {
 const GOOGLE_CLIENT_ID = "556636859215-9iar5eql2ocjka6oavt9kakq1fap3lp3.apps.googleusercontent.com"; // ← À remplacer
 
 function initGoogleSignIn() {
-  if (typeof google === "undefined" || !google.accounts) {
-    setTimeout(initGoogleSignIn, 200);
+  if (typeof google === "undefined" || !google.accounts || !google.accounts.id) {
+    // Réessayer toutes les 100ms jusqu'à ce que GIS soit chargé
+    setTimeout(initGoogleSignIn, 100);
     return;
   }
-  google.accounts.id.initialize({
-    client_id: GOOGLE_CLIENT_ID,
-    callback: handleGoogleCredential,
-    auto_select: false,
-    hosted_domain: "dmcsen.com",
-  });
-  google.accounts.id.renderButton(
-    document.getElementById("google-signin-btn"),
-    { theme: "outline", size: "large", width: 300, text: "signin_with", locale: "fr" }
-  );
+  try {
+    google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: handleGoogleCredential,
+      auto_select: false,
+      hosted_domain: "dmcsen.com",
+      cancel_on_tap_outside: false,
+    });
+    const btnContainer = document.getElementById("google-signin-btn");
+    if (!btnContainer) { setTimeout(initGoogleSignIn, 100); return; }
+    google.accounts.id.renderButton(btnContainer, {
+      theme: "outline", size: "large", width: 300,
+      text: "signin_with", locale: "fr", shape: "rectangular"
+    });
+  } catch(err) {
+    console.error("GIS init error:", err);
+    // Afficher un bouton de secours en cas d'échec GIS
+    const btn = document.getElementById("google-signin-btn");
+    if (btn) btn.innerHTML = '<button class="btn btn-primary" style="width:300px" onclick="gsiPrompt()">Se connecter avec Google</button>';
+  }
+}
+
+function gsiPrompt() {
+  if (typeof google !== "undefined" && google.accounts) {
+    google.accounts.id.prompt();
+  }
 }
 
 async function handleGoogleCredential(response) {
@@ -401,7 +418,13 @@ function doLogout() {
   }
 }
 
-window.addEventListener("load", initGoogleSignIn);
+// Lancer dès que le DOM est prêt, et aussi au load complet
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initGoogleSignIn);
+} else {
+  // DOM déjà prêt
+  initGoogleSignIn();
+}
 
 function showErr(id) { document.getElementById(id).classList.remove("hidden"); }
 
