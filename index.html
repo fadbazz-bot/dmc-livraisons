@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DMC Livraisons</title>
-<script src="https://accounts.google.com/gsi/client"></script>
 <style>
 :root {
   --primary: #1a3a5c;
@@ -418,13 +417,7 @@ function doLogout() {
   }
 }
 
-// Lancer dès que le DOM est prêt, et aussi au load complet
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", initGoogleSignIn);
-} else {
-  // DOM déjà prêt
-  initGoogleSignIn();
-}
+// initGoogleSignIn sera appelé par le callback onload du script GIS (voir fin de body)
 
 function showErr(id) { document.getElementById(id).classList.remove("hidden"); }
 
@@ -1960,6 +1953,16 @@ function iconSettings() { return `<svg viewBox="0 0 16 16" fill="none" stroke="c
 function iconWarning() { return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2L1 14h14L8 2z"/><path d="M8 6v4"/><circle cx="8" cy="12" r="0.5" fill="currentColor"/></svg>`; }
 function iconUsers() { return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="5.5" cy="4" r="2.5"/><circle cx="10.5" cy="4" r="2.5"/><path d="M0.5 14c0-3 2.2-5 5-5s5 2 5 5"/><path d="M6 14c0-3 2.2-5 5-5s5 2 5 5"/></svg>`; }
 function iconPackage() { return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4l6-3 6 3v8l-6 3-6-3V4z"/><path d="M8 1v14M2 4l6 3 6-3"/></svg>`; }
+</script>
+<script src="https://accounts.google.com/gsi/client" onload="initGoogleSignIn()" onerror="onGsiError()"></script>
+<script>
+function onGsiError() {
+  // GIS n'a pas pu se charger — afficher un bouton de secours
+  const btn = document.getElementById("google-signin-btn");
+  if (btn) {
+    btn.innerHTML = '<p style="color:var(--danger);font-size:13px;text-align:center">Impossible de charger Google Sign-In.<br>Vérifiez votre connexion internet.</p>';
+  }
+}
 </script>
 </body>
 </html>
