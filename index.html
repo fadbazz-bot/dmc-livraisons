@@ -67,6 +67,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .sidebar-bottom { padding: 12px 16px; border-top: 1px solid rgba(255,255,255,0.1); }
 .sidebar-bottom button { background: none; border: none; color: rgba(255,255,255,0.6); font-size: 13px; cursor: pointer; padding: 6px 0; }
 .sidebar-bottom button:hover { color: white; }
+.nav-badge { background: #e74c3c; color: white; font-size: 10px; font-weight: 700; border-radius: 10px; padding: 1px 6px; min-width: 18px; text-align: center; margin-left: auto; animation: pulse 2s infinite; }
 
 /* Header */
 .page-header { background: var(--card); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
@@ -343,19 +344,32 @@ async function startApp() {
   buildSidebar();
   allMotifs = await api("getMotifsRetard");
 
-  // Page par défaut selon le rôle
-  const defaults = {
-    commercial: "file",
-    responsable: "responsable",
-    chef_poste: "poste-garde",
-    controleur: "dashboard",
-    admin: "file",
-  };
-  navigateTo(defaults[currentUser.role] || "file");
+  // Rafraîchir le badge retard en arrière-plan
+  refreshBadgeRetard();
+  setInterval(refreshBadgeRetard, 60000);
+
+  // Page par défaut selon le rôle, ou deep-link via hash
+  const hash = window.location.hash.replace("#", "").trim();
+  const deepLinkPage = hash && ["file","nouvelle-demande","responsable","justificatifs","poste-garde","dashboard","config"].includes(hash) ? hash : null;
+
+  if (deepLinkPage) {
+    navigateTo(deepLinkPage);
+  } else {
+    const defaults = {
+      commercial: "file",
+      responsable: "justificatifs", // arrivent directement sur les justificatifs
+      chef_poste: "poste-garde",
+      controleur: "dashboard",
+      admin: "file",
+    };
+    navigateTo(defaults[currentUser.role] || "file");
+  }
 
   // Rafraîchissement auto toutes les 30s
   refreshInterval = setInterval(() => { if (currentPage) renderCurrentPage(); }, 30000);
 }
+
+let badgeRetard = 0;
 
 function buildSidebar() {
   const role = currentUser.role;
@@ -363,6 +377,7 @@ function buildSidebar() {
     { id: "file", label: "File des expéditions", icon: iconList, roles: ["commercial","responsable","chef_poste","admin","controleur"] },
     { id: "nouvelle-demande", label: "Nouvelle demande", icon: iconPlus, roles: ["commercial","admin"] },
     { id: "responsable", label: "Prépa & Livraison", icon: iconWrench, roles: ["responsable","admin"] },
+    { id: "justificatifs", label: "Justificatifs retard", icon: iconWarning, roles: ["responsable","admin"], badge: true },
     { id: "poste-garde", label: "Poste de Garde", icon: iconShield, roles: ["chef_poste","admin"] },
     { id: "dashboard", label: "Dashboard KPI", icon: iconChart, roles: ["admin","controleur","responsable","chef_poste"] },
     { id: "config", label: "Configuration", icon: iconSettings, roles: ["admin"] },
@@ -371,8 +386,23 @@ function buildSidebar() {
   document.getElementById("sidebar-nav").innerHTML = filtered.map(n => `
     <div class="nav-item" id="nav-${n.id}" onclick="navigateTo('${n.id}')">
       ${n.icon()} <span>${n.label}</span>
+      ${n.badge ? `<span id="badge-justif" class="nav-badge hidden">0</span>` : ""}
     </div>
   `).join("");
+}
+
+async function refreshBadgeRetard() {
+  if (!["responsable","admin"].includes(currentUser?.role)) return;
+  try {
+    const zone = currentUser.zone || "";
+    const data = await api("getRetardsAJustifier", zone ? { zone } : {});
+    badgeRetard = data.length || 0;
+    const el = document.getElementById("badge-justif");
+    if (el) {
+      el.textContent = badgeRetard;
+      el.classList.toggle("hidden", badgeRetard === 0);
+    }
+  } catch(e) { /* silencieux */ }
 }
 
 function navigateTo(page) {
@@ -388,6 +418,7 @@ async function renderCurrentPage() {
     "file": renderFile,
     "nouvelle-demande": renderNouvelleDemande,
     "responsable": renderResponsable,
+    "justificatifs": renderJustificatifs,
     "poste-garde": renderPosteGarde,
     "dashboard": renderDashboard,
     "config": renderConfig,
@@ -783,6 +814,60 @@ async function renderPosteGarde() {
   }
 }
 
+// ─── PAGE : JUSTIFICATIFS RETARD (à traiter par le responsable) ─────────────
+async function renderJustificatifs() {
+  const pc = document.getElementById("page-container");
+  pc.innerHTML = `
+    <div class="page-header">
+      <div><div class="page-title">⚠️ Justificatifs de retard</div>
+      <div class="page-subtitle">Livraisons sorties avec un délai > 30 min — justification obligatoire</div></div>
+    </div>
+    <div class="page-content" id="justif-list"><div class="empty">${iconPackage()}<p>Chargement…</p></div></div>
+  `;
+  try {
+    const zone = currentUser.zone || "";
+    const data = await api("getRetardsAJustifier", zone ? { zone } : {});
+
+    // Mettre à jour le badge
+    badgeRetard = data.length || 0;
+    const badgeEl = document.getElementById("badge-justif");
+    if (badgeEl) { badgeEl.textContent = badgeRetard; badgeEl.classList.toggle("hidden", badgeRetard === 0); }
+
+    if (!data.length) {
+      document.getElementById("justif-list").innerHTML = `<div class="empty">${iconPackage()}<p>Aucun retard en attente de justification — tout est à jour ✅</p></div>`;
+      return;
+    }
+
+    document.getElementById("justif-list").innerHTML = data.map(exp => {
+      const duree = exp.t0 && exp.t3 ? Math.round((new Date(exp.t3) - new Date(exp.t0)) / 60000) : "?";
+      const heureT3 = exp.t3 ? new Date(exp.t3).toLocaleString("fr-FR", {hour:"2-digit",minute:"2-digit",day:"2-digit",month:"2-digit"}) : "-";
+      const numBL = exp.numeroBL || exp.numero_bl || exp.NUMERO_BL || exp.numeroBl || "-";
+      return `
+        <div class="card card-retard" style="margin-bottom:14px">
+          <div class="card-body">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+              <div>
+                <span style="font-weight:700;font-family:monospace;font-size:15px;color:var(--primary)">${exp.numExpedition}</span>
+                <span style="background:var(--danger);color:white;font-size:11px;font-weight:700;border-radius:4px;padding:2px 7px;margin-left:8px">🔴 ${duree} min</span>
+              </div>
+              <span style="font-size:12px;color:var(--muted)">Sorti le ${heureT3}</span>
+            </div>
+            <div class="grid-2" style="gap:8px;margin-bottom:14px">
+              <div style="font-size:13px"><span style="color:var(--muted)">Zone :</span> <strong>${exp.zone}</strong></div>
+              <div style="font-size:13px"><span style="color:var(--muted)">Plaque :</span> <strong>${exp.plaque || "-"}</strong></div>
+              <div style="font-size:13px"><span style="color:var(--muted)">N° BL :</span> <strong>${numBL}</strong></div>
+              <div style="font-size:13px"><span style="color:var(--muted)">Chef de poste :</span> ${exp.chefPosteEmail || "-"}</div>
+            </div>
+            <button class="btn btn-warning" onclick="openJustifRetard('${exp.id}','${exp.numExpedition}')">✍️ Justifier ce retard</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+  } catch(e) {
+    document.getElementById("justif-list").innerHTML = `<div class="empty"><p>Erreur : ${e.message}</p></div>`;
+  }
+}
+
 // ─── PAGE : DASHBOARD ─────────────────────────────────────────────────────────
 async function renderDashboard() {
   const today = new Date().toISOString().slice(0,10);
@@ -1091,13 +1176,8 @@ function openT3(expId, numExp) {
         </div>
         <img id="t3-photo-preview" class="photo-preview hidden">
       </div>
-      <div class="form-group">
-        <label class="form-label">Motifs de retard <span>(obligatoire si > 30 min)</span></label>
-        <div class="motif-grid">${motifsHtml}</div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Commentaire</label>
-        <textarea class="form-textarea" id="t3-commentaire" rows="2" placeholder="Précisions sur le retard…"></textarea>
+      <div id="t3-retard-info" class="alert alert-warning hidden" style="margin-bottom:4px">
+        ⚠️ Ce véhicule sera marqué en retard. Le responsable de dépôt sera notifié pour justifier.
       </div>
       <div id="t3-error" class="form-error hidden"></div>
     </div>
@@ -1106,6 +1186,13 @@ function openT3(expId, numExp) {
       <button class="btn btn-success" onclick="submitT3('${expId}')">✅ Confirmer la sortie</button>
     </div>
   `);
+
+  // Afficher le message retard si déjà > 30 min depuis T0
+  const exp = (allCommandes.flatMap(c=>c.expeditions||[])).find(e=>e.id===expId);
+  if (exp && exp.t0) {
+    const mins = Math.round((Date.now() - new Date(exp.t0)) / 60000);
+    if (mins > 30) document.getElementById("t3-retard-info").classList.remove("hidden");
+  }
 }
 
 function activateScan() {
@@ -1131,11 +1218,8 @@ async function submitT3(expId) {
   const plaque = document.getElementById("t3-plaque").value.trim();
   const chauffeur = document.getElementById("t3-chauffeur").value.trim();
   const numeroBL = document.getElementById("t3-bl").value.trim();
-  const commentaire = document.getElementById("t3-commentaire").value.trim();
   const photoBlUrl = document.getElementById("t3-photo-preview").src || "";
   const errEl = document.getElementById("t3-error");
-
-  const selectedMotifs = [...document.querySelectorAll(".motif-item.selected input")].map(i => i.value);
 
   if (!plaque) { errEl.textContent = "Plaque d'immatriculation obligatoire."; errEl.classList.remove("hidden"); return; }
   if (!numeroBL) { errEl.textContent = "N° de Bon de Livraison obligatoire."; errEl.classList.remove("hidden"); return; }
@@ -1143,7 +1227,7 @@ async function submitT3(expId) {
   errEl.classList.add("hidden");
 
   try {
-    await api("jalon_t3", {
+    const result = await api("jalon_t3", {
       expId,
       acteurEmail: currentUser.email,
       acteurNom: currentUser.nom,
@@ -1151,11 +1235,12 @@ async function submitT3(expId) {
       chauffeur,
       numeroBL,
       photoBlUrl: photoBlUrl.startsWith("data:") ? photoBlUrl : "",
-      motifRetard: selectedMotifs,
-      commentaireRetard: commentaire,
     });
     closeModal();
-    showToast("Sortie validée (T3) — notification envoyée", "success");
+    const msg = result.enRetard
+      ? "Sortie validée — en retard, le responsable de dépôt sera notifié pour justifier"
+      : "Sortie validée (T3) — notification envoyée";
+    showToast(msg, result.enRetard ? "warning" : "success");
     renderCurrentPage();
   } catch(e) {
     errEl.textContent = e.message;
@@ -1200,8 +1285,9 @@ async function submitJustif(expId) {
   if (!motifs.length) { showToast("Choisissez au moins un motif", "error"); return; }
   await api("justifierRetard", { expId, motifRetard: motifs, commentaireRetard: commentaire, acteurEmail: currentUser.email });
   closeModal();
-  showToast("Retard justifié", "success");
-  renderCurrentPage();
+  showToast("Retard justifié — merci", "success");
+  await refreshBadgeRetard();
+  renderCurrentPage(); // reste sur justificatifs pour traiter les suivants
 }
 
 // ─── MODAL HELPERS ────────────────────────────────────────────────────────────
@@ -1261,6 +1347,7 @@ function iconWrench() { return `<svg viewBox="0 0 16 16" fill="none" stroke="cur
 function iconShield() { return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1l6 2v5c0 3-2.5 5.5-6 7C2.5 13.5 0 11 0 8V3l8-2z"/></svg>`; }
 function iconChart() { return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 12l4-5 3 3 4-7"/><path d="M1 15h14"/></svg>`; }
 function iconSettings() { return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2"/></svg>`; }
+function iconWarning() { return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2L1 14h14L8 2z"/><path d="M8 6v4"/><circle cx="8" cy="12" r="0.5" fill="currentColor"/></svg>`; }
 function iconPackage() { return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4l6-3 6 3v8l-6 3-6-3V4z"/><path d="M8 1v14M2 4l6 3 6-3"/></svg>`; }
 </script>
 </body>
