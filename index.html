@@ -652,9 +652,9 @@ async function renderNouvelleDemande() {
                 <div class="form-hint">Format : CV-MC suivi des chiffres</div>
               </div>
               <div class="form-group">
-                <label class="form-label">Site *</label>
+                <label class="form-label">Site <span>(optionnel)</span></label>
                 <select class="form-select" id="nd-site">
-                  <option value="">Choisir…</option>
+                  <option value="">Tous les sites…</option>
                   ${SITES.map(s=>`<option value="${s}">${s}</option>`).join("")}
                 </select>
               </div>
@@ -740,7 +740,6 @@ async function submitNouvelleDemande() {
     expeditions.push({ numExpedition: num, zone });
   });
 
-  if (!site) { errEl.textContent = "Veuillez choisir un site."; errEl.classList.remove("hidden"); return; }
   if (!valid || !expeditions.length) { errEl.textContent = "Vérifiez les N° d'expédition (format EX-XXXXX) et les zones."; errEl.classList.remove("hidden"); return; }
 
   errEl.classList.add("hidden");
@@ -1144,7 +1143,8 @@ async function renderUtilisateurs() {
             <td>${u.actif ? '<span style="color:var(--success)">Actif</span>' : '<span style="color:var(--danger)">Inactif</span>'}</td>
             <td style="white-space:nowrap">
               <button class="btn btn-outline btn-sm" onclick="openEditUser('${u.id}','${u.nom.replace(/'/g,"\\'")}','${u.email}','${u.role}','${u.site||''}','${u.zone||''}',${u.actif})">Modifier</button>
-              ${u.actif ? '<button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="doDeleteUser(\''+u.id+'\')">Désactiver</button>' : '<button class="btn btn-success btn-sm" style="margin-left:4px" onclick="doReactivateUser(\''+u.id+'\')">Réactiver</button>'}
+              ${u.actif ? '<button class="btn btn-warning btn-sm" style="margin-left:4px" onclick="doDeleteUser(\''+u.id+'\')">Désactiver</button>' : '<button class="btn btn-success btn-sm" style="margin-left:4px" onclick="doReactivateUser(\''+u.id+'\')">Réactiver</button>'}
+              <button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="doHardDeleteUser('${u.id}','${u.nom.replace(/'/g,String.fromCharCode(39))}')" title="Suppression définitive">🗑</button>
             </td>
           </tr>
         `).join("")}</tbody>
@@ -1265,10 +1265,20 @@ async function submitEditUser(id) {
 }
 
 async function doDeleteUser(id) {
-  if (!confirm("Désactiver ce compte ?")) return;
+  if (!confirm("Désactiver ce compte ? Il ne pourra plus se connecter mais restera dans la liste.")) return;
   await api("deleteUser", { id });
   showToast("Compte désactivé", "success");
   renderUtilisateurs();
+}
+
+async function doHardDeleteUser(id, nom) {
+  const confirmation = prompt(`Suppression DÉFINITIVE de "${nom}".\nCette action est irréversible.\n\nTapez SUPPRIMER pour confirmer :`);
+  if (confirmation !== "SUPPRIMER") { if (confirmation !== null) showToast("Suppression annulée", "error"); return; }
+  try {
+    await api("hardDeleteUser", { id });
+    showToast("Compte supprimé définitivement", "success");
+    renderUtilisateurs();
+  } catch(e) { showToast("Erreur : " + e.message, "error"); }
 }
 
 async function doReactivateUser(id) {
