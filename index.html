@@ -292,23 +292,18 @@ let allMotifs = [];
 let refreshInterval = null;
 
 // ─── API ─────────────────────────────────────────────────────────────────────
+// Toutes les requêtes passent en GET pour éviter le blocage CORS preflight.
+// Apps Script accepte les paramètres URL aussi bien pour les lectures que les mutations.
 async function api(action, params = {}) {
   const url = new URL(SCRIPT_URL);
   url.searchParams.set("action", action);
-  // GET params for simple reads, POST for mutations
-  const isMutation = ["createCommande","jalon_t0","jalon_t1","jalon_t2","jalon_t3",
-    "feuVert","justifierRetard","addMotifRetard","updateMotifRetard","addExpedition"].includes(action);
-  let res;
-  if (isMutation) {
-    res = await fetch(SCRIPT_URL + "?action=" + action, {
-      method: "POST", body: JSON.stringify({action, ...params}),
-      headers: {"Content-Type":"application/json"},
-      redirect: "follow",
-    });
-  } else {
-    Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, v));
-    res = await fetch(url.toString(), { redirect: "follow" });
-  }
+  // Sérialiser les valeurs complexes (tableaux/objets) en JSON string
+  // Les data: URLs (photos base64) sont ignorées — trop longues pour une URL GET
+  Object.entries(params).forEach(([k, v]) => {
+    if (typeof v === "string" && v.startsWith("data:")) return; // skip base64 photos
+    url.searchParams.set(k, typeof v === "object" ? JSON.stringify(v) : v);
+  });
+  const res = await fetch(url.toString(), { redirect: "follow" });
   const json = await res.json();
   if (json.error) throw new Error(json.error);
   return json;
