@@ -840,7 +840,7 @@ function renderExpRow(exp, cmd) {
     <div class="exp-row-wrap exp-selectable" data-search="${(exp.numExpedition + ' ' + exp.zone + ' ' + (cmd.numCmdNav||'') + ' ' + (cmd.site||'')).toLowerCase()}" data-exp-id="${exp.id}" onclick="handleExpRowClick(event,'${exp.id}',this)" style="background:var(--bg);border-radius:8px;padding:12px 14px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div style="display:flex;align-items:center;gap:8px">
-          ${canSelectExp(exp) ? '<input type="checkbox" class="exp-checkbox" onclick="event.stopPropagation();toggleExpSelection(''+exp.id+'',this.closest('.exp-selectable'))" ' + (false ? 'checked' : '') + '>' : ''}
+          ${canSelectExp(exp) ? `<input type="checkbox" class="exp-checkbox" onclick="event.stopPropagation();toggleExpSelection('${exp.id}',this.closest('.exp-selectable'))">` : ''}
           <span style="font-weight:700;font-family:monospace;font-size:14px">${exp.numExpedition}</span>
           <span style="font-size:12px;color:var(--muted)">${exp.zone}</span>
           ${exp.statut !== "sortie" && duree !== null ? `<span class="duree-pill ${dureeClass}">${fmtDuree(duree)}</span>` : ""}
