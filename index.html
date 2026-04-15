@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DMC Livraisons</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 :root {
   --primary: #1a3a5c;
@@ -68,6 +69,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .sidebar-bottom button { background: none; border: none; color: rgba(255,255,255,0.6); font-size: 13px; cursor: pointer; padding: 6px 0; }
 .sidebar-bottom button:hover { color: white; }
 .nav-badge { background: #e74c3c; color: white; font-size: 10px; font-weight: 700; border-radius: 10px; padding: 1px 6px; min-width: 18px; text-align: center; margin-left: auto; animation: pulse 2s infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* Header */
 .page-header { background: var(--card); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
@@ -220,14 +222,14 @@ tr:hover td { background: rgba(240,244,248,0.6); }
         <span>Gestion des expéditions</span>
       </div>
     </div>
-    <label for="login-email">Email professionnel</label>
-    <input class="form-input" id="login-email" type="email" placeholder="prenom.nom@dmcsen.com" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;color:var(--text);background:white;margin-bottom:20px;" onkeydown="if(event.key==='Enter')doLogin()">
-    <p style="font-size:11px;color:var(--muted);margin-bottom:16px;margin-top:-12px">Seuls les comptes @dmcsen.com autorisés sont acceptés.</p>
-    <button class="btn btn-primary" onclick="doLogin()">
-      <svg viewBox="0 0 16 16" fill="currentColor" width="14"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0zm0 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zm0 3a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm0 6a5.5 5.5 0 0 1-4.6-2.5C3.6 7 5.6 6 8 6s4.4 1 4.6 2.5A5.5 5.5 0 0 1 8 10.5z"/></svg>
-      Se connecter
-    </button>
-    <p class="error-msg hidden" id="login-error">Compte introuvable. Vérifiez votre sélection.</p>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:20px;text-align:center;">Connectez-vous avec votre compte professionnel @dmcsen.com</p>
+    <div id="google-signin-btn" style="display:flex;justify-content:center;margin-bottom:16px;"></div>
+    <div id="login-loading" class="hidden" style="text-align:center;padding:12px 0;">
+      <div style="display:inline-block;width:20px;height:20px;border:3px solid var(--border);border-top:3px solid var(--primary);border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+      <p style="font-size:13px;color:var(--muted);margin-top:8px;">Vérification en cours...</p>
+    </div>
+    <p style="font-size:11px;color:var(--muted);text-align:center;margin-top:4px;">Seuls les comptes @dmcsen.com autorisés sont acceptés.</p>
+    <p class="error-msg hidden" id="login-error" style="text-align:center;">Compte introuvable. Vérifiez votre sélection.</p>
   </div>
 </div>
 
@@ -308,19 +310,56 @@ async function api(action, params = {}) {
   return json;
 }
 
-// ─── AUTH ────────────────────────────────────────────────────────────────────
-async function doLogin() {
-  const email = document.getElementById("login-email").value.trim().toLowerCase();
+// ─── GOOGLE SIGN-IN ────────────────────────────────────────────────────────
+const GOOGLE_CLIENT_ID = "VOTRE_CLIENT_ID.apps.googleusercontent.com"; // ← À remplacer
+
+function initGoogleSignIn() {
+  if (typeof google === "undefined" || !google.accounts) {
+    setTimeout(initGoogleSignIn, 200);
+    return;
+  }
+  google.accounts.id.initialize({
+    client_id: GOOGLE_CLIENT_ID,
+    callback: handleGoogleCredential,
+    auto_select: false,
+    hosted_domain: "dmcsen.com",
+  });
+  google.accounts.id.renderButton(
+    document.getElementById("google-signin-btn"),
+    { theme: "outline", size: "large", width: 300, text: "signin_with", locale: "fr" }
+  );
+}
+
+async function handleGoogleCredential(response) {
   const errEl = document.getElementById("login-error");
-  if (!email) { errEl.textContent = "Veuillez saisir votre email."; errEl.classList.remove("hidden"); return; }
-  if (!email.endsWith("@dmcsen.com")) { errEl.textContent = "Seuls les comptes @dmcsen.com sont autorisés."; errEl.classList.remove("hidden"); return; }
+  const loadingEl = document.getElementById("login-loading");
+  const btnEl = document.getElementById("google-signin-btn");
   errEl.classList.add("hidden");
+  btnEl.style.display = "none";
+  loadingEl.classList.remove("hidden");
+
   try {
-    const user = await api("login", { email });
-    if (user.error) { errEl.textContent = user.error; errEl.classList.remove("hidden"); return; }
+    const credential = response.credential;
+    if (!credential) throw new Error("Pas de token reçu de Google.");
+    
+    // Envoyer le token au backend Apps Script pour vérification
+    const user = await api("googleLogin", { credential });
+    loadingEl.classList.add("hidden");
+    btnEl.style.display = "flex";
+    
+    if (user.error) {
+      errEl.textContent = user.error;
+      errEl.classList.remove("hidden");
+      return;
+    }
     currentUser = user;
     startApp();
-  } catch(e) { errEl.textContent = "Erreur de connexion. Réessayez."; errEl.classList.remove("hidden"); }
+  } catch(e) {
+    loadingEl.classList.add("hidden");
+    btnEl.style.display = "flex";
+    errEl.textContent = "Erreur de connexion : " + e.message;
+    errEl.classList.remove("hidden");
+  }
 }
 
 function doLogout() {
@@ -328,8 +367,13 @@ function doLogout() {
   clearInterval(refreshInterval);
   document.getElementById("app").classList.add("hidden");
   document.getElementById("login-screen").classList.remove("hidden");
-  document.getElementById("login-email").value = "";
+  // Réinitialiser Google Sign-In
+  if (typeof google !== "undefined" && google.accounts) {
+    google.accounts.id.disableAutoSelect();
+  }
 }
+
+window.addEventListener("load", initGoogleSignIn);
 
 function showErr(id) { document.getElementById(id).classList.remove("hidden"); }
 
