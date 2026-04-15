@@ -220,18 +220,9 @@ tr:hover td { background: rgba(240,244,248,0.6); }
         <span>Gestion des expéditions</span>
       </div>
     </div>
-    <label for="login-select">Compte</label>
-    <select id="login-select">
-      <option value="">Sélectionnez votre compte…</option>
-      <option value="Fadell.bazzouni@dmcsen.com">Fadel Bazzouni (Admin)</option>
-      <option value="commercial1@dmcsen.com">Ndeye Fatou (Commercial)</option>
-      <option value="commercial2@dmcsen.com">Fatou Sow (Commercial)</option>
-      <option value="responsable1@dmcsen.com">Ibrahima Ndoye (Resp. Showroom)</option>
-      <option value="responsable2@dmcsen.com">Ousmane Fall (Resp. Quincaillerie)</option>
-      <option value="responsable3@dmcsen.com">Modou Thiam (Resp. Parc Acier)</option>
-      <option value="chef_poste@dmcsen.com">Abdou Diop (Chef de Poste)</option>
-      <option value="controleur1@dmcsen.com">Mamadou Ba (Contrôleur)</option>
-    </select>
+    <label for="login-email">Email professionnel</label>
+    <input class="form-input" id="login-email" type="email" placeholder="prenom.nom@dmcsen.com" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;color:var(--text);background:white;margin-bottom:20px;" onkeydown="if(event.key==='Enter')doLogin()">
+    <p style="font-size:11px;color:var(--muted);margin-bottom:16px;margin-top:-12px">Seuls les comptes @dmcsen.com autorisés sont acceptés.</p>
     <button class="btn btn-primary" onclick="doLogin()">
       <svg viewBox="0 0 16 16" fill="currentColor" width="14"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0zm0 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zm0 3a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm0 6a5.5 5.5 0 0 1-4.6-2.5C3.6 7 5.6 6 8 6s4.4 1 4.6 2.5A5.5 5.5 0 0 1 8 10.5z"/></svg>
       Se connecter
@@ -277,7 +268,14 @@ tr:hover td { background: rgba(240,244,248,0.6); }
 // ─── CONFIG ─────────────────────────────────────────────────────────────────
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxJ7zAiWOGniCg1dSDRfwEtO8oJifKIMNSaLfPtsoU4C-XT-hJehAc3g-Jx37pWWSyc/exec"; // ← À remplacer après déploiement
 
-const ZONES = ["Showroom", "Parc Acier", "Dépôt Quincaillerie"];
+const ZONES = ["Showroom", "Parc Acier", "Dépôt Quincaillerie", "Parc", "Dépôt"];
+const ALL_ROLES = [
+  { value: "admin", label: "Administrateur" },
+  { value: "commercial", label: "Commercial" },
+  { value: "responsable", label: "Responsable" },
+  { value: "chef_poste", label: "Chef de Poste" },
+  { value: "controleur", label: "Contrôleur" },
+];
 const SITES = ["Dakar", "Diamniadio"];
 const ROLE_LABELS = {
   admin: "Administrateur", commercial: "Commercial",
@@ -312,14 +310,17 @@ async function api(action, params = {}) {
 
 // ─── AUTH ────────────────────────────────────────────────────────────────────
 async function doLogin() {
-  const email = document.getElementById("login-select").value;
-  if (!email) return showErr("login-error");
+  const email = document.getElementById("login-email").value.trim().toLowerCase();
+  const errEl = document.getElementById("login-error");
+  if (!email) { errEl.textContent = "Veuillez saisir votre email."; errEl.classList.remove("hidden"); return; }
+  if (!email.endsWith("@dmcsen.com")) { errEl.textContent = "Seuls les comptes @dmcsen.com sont autorisés."; errEl.classList.remove("hidden"); return; }
+  errEl.classList.add("hidden");
   try {
     const user = await api("login", { email });
-    if (user.error) { showErr("login-error"); return; }
+    if (user.error) { errEl.textContent = user.error; errEl.classList.remove("hidden"); return; }
     currentUser = user;
     startApp();
-  } catch(e) { showErr("login-error"); }
+  } catch(e) { errEl.textContent = "Erreur de connexion. Réessayez."; errEl.classList.remove("hidden"); }
 }
 
 function doLogout() {
@@ -327,7 +328,7 @@ function doLogout() {
   clearInterval(refreshInterval);
   document.getElementById("app").classList.add("hidden");
   document.getElementById("login-screen").classList.remove("hidden");
-  document.getElementById("login-select").value = "";
+  document.getElementById("login-email").value = "";
 }
 
 function showErr(id) { document.getElementById(id).classList.remove("hidden"); }
@@ -350,7 +351,7 @@ async function startApp() {
 
   // Page par défaut selon le rôle, ou deep-link via hash
   const hash = window.location.hash.replace("#", "").trim();
-  const deepLinkPage = hash && ["file","nouvelle-demande","responsable","justificatifs","poste-garde","dashboard","config"].includes(hash) ? hash : null;
+  const deepLinkPage = hash && ["file","nouvelle-demande","responsable","justificatifs","poste-garde","dashboard","utilisateurs","config"].includes(hash) ? hash : null;
 
   if (deepLinkPage) {
     navigateTo(deepLinkPage);
@@ -359,7 +360,7 @@ async function startApp() {
       commercial: "file",
       responsable: "justificatifs", // arrivent directement sur les justificatifs
       chef_poste: "poste-garde",
-      controleur: "dashboard",
+      controleur: "justificatifs",
       admin: "file",
     };
     navigateTo(defaults[currentUser.role] || "file");
@@ -377,7 +378,8 @@ function buildSidebar() {
     { id: "file", label: "File des expéditions", icon: iconList, roles: ["commercial","responsable","chef_poste","admin","controleur"] },
     { id: "nouvelle-demande", label: "Nouvelle demande", icon: iconPlus, roles: ["commercial","admin"] },
     { id: "responsable", label: "Prépa & Livraison", icon: iconWrench, roles: ["responsable","admin"] },
-    { id: "justificatifs", label: "Justificatifs retard", icon: iconWarning, roles: ["responsable","admin"], badge: true },
+    { id: "justificatifs", label: "Justificatifs retard", icon: iconWarning, roles: ["responsable","controleur","admin"], badge: true },
+    { id: "utilisateurs", label: "Utilisateurs", icon: iconUsers, roles: ["admin"] },
     { id: "poste-garde", label: "Poste de Garde", icon: iconShield, roles: ["chef_poste","admin"] },
     { id: "dashboard", label: "Dashboard KPI", icon: iconChart, roles: ["admin","controleur","responsable","chef_poste"] },
     { id: "config", label: "Configuration", icon: iconSettings, roles: ["admin"] },
@@ -392,10 +394,16 @@ function buildSidebar() {
 }
 
 async function refreshBadgeRetard() {
-  if (!["responsable","admin"].includes(currentUser?.role)) return;
+  if (!["responsable","controleur","admin"].includes(currentUser?.role)) return;
   try {
-    const zone = currentUser.zone || "";
-    const data = await api("getRetardsAJustifier", zone ? { zone } : {});
+    let data;
+    if (currentUser.role === "controleur") {
+      const site = currentUser.site || "";
+      data = await api("getRetardsAValider", site ? { site } : {});
+    } else {
+      const zone = currentUser.zone || "";
+      data = currentUser.role === "admin" ? await api("getRetardsAJustifier") : await api("getRetardsAJustifier", zone ? { zone } : {});
+    }
     badgeRetard = data.length || 0;
     const el = document.getElementById("badge-justif");
     if (el) {
@@ -419,6 +427,7 @@ async function renderCurrentPage() {
     "nouvelle-demande": renderNouvelleDemande,
     "responsable": renderResponsable,
     "justificatifs": renderJustificatifs,
+    "utilisateurs": renderUtilisateurs,
     "poste-garde": renderPosteGarde,
     "dashboard": renderDashboard,
     "config": renderConfig,
@@ -817,16 +826,34 @@ async function renderPosteGarde() {
 // ─── PAGE : JUSTIFICATIFS RETARD (à traiter par le responsable) ─────────────
 async function renderJustificatifs() {
   const pc = document.getElementById("page-container");
+  const isControleur = currentUser.role === "controleur";
+  const isResponsable = currentUser.role === "responsable";
+  const isAdmin = currentUser.role === "admin";
+
+  const title = isControleur ? "📋 Validation des justificatifs" : "⚠️ Justificatifs de retard";
+  const subtitle = isControleur
+    ? "Valider ou contredire les justificatifs soumis par les responsables"
+    : "Livraisons sorties avec un délai > 30 min — justification obligatoire";
+
   pc.innerHTML = `
     <div class="page-header">
-      <div><div class="page-title">⚠️ Justificatifs de retard</div>
-      <div class="page-subtitle">Livraisons sorties avec un délai > 30 min — justification obligatoire</div></div>
+      <div><div class="page-title">${title}</div>
+      <div class="page-subtitle">${subtitle}</div></div>
     </div>
     <div class="page-content" id="justif-list"><div class="empty">${iconPackage()}<p>Chargement…</p></div></div>
   `;
+
   try {
-    const zone = currentUser.zone || "";
-    const data = await api("getRetardsAJustifier", zone ? { zone } : {});
+    let data;
+    if (isControleur) {
+      // Le contrôleur voit les retards justifiés (par le responsable) mais pas encore validés par lui
+      const site = currentUser.site || "";
+      data = await api("getRetardsAValider", site ? { site } : {});
+    } else {
+      // Le responsable voit les retards à justifier
+      const zone = currentUser.zone || "";
+      data = isAdmin ? await api("getRetardsAJustifier") : await api("getRetardsAJustifier", zone ? { zone } : {});
+    }
 
     // Mettre à jour le badge
     badgeRetard = data.length || 0;
@@ -834,14 +861,37 @@ async function renderJustificatifs() {
     if (badgeEl) { badgeEl.textContent = badgeRetard; badgeEl.classList.toggle("hidden", badgeRetard === 0); }
 
     if (!data.length) {
-      document.getElementById("justif-list").innerHTML = `<div class="empty">${iconPackage()}<p>Aucun retard en attente de justification — tout est à jour ✅</p></div>`;
+      const emptyMsg = isControleur
+        ? "Aucun justificatif en attente de validation — tout est traité ✅"
+        : "Aucun retard en attente de justification — tout est à jour ✅";
+      document.getElementById("justif-list").innerHTML = `<div class="empty">${iconPackage()}<p>${emptyMsg}</p></div>`;
       return;
     }
 
     document.getElementById("justif-list").innerHTML = data.map(exp => {
       const duree = exp.t0 && exp.t3 ? Math.round((new Date(exp.t3) - new Date(exp.t0)) / 60000) : "?";
       const heureT3 = exp.t3 ? new Date(exp.t3).toLocaleString("fr-FR", {hour:"2-digit",minute:"2-digit",day:"2-digit",month:"2-digit"}) : "-";
-      const numBL = exp.numeroBL || exp.numero_bl || exp.NUMERO_BL || exp.numeroBl || "-";
+      const numBL = exp.numeroBL || "-";
+
+      let actionHtml;
+      if (isControleur) {
+        // Contrôleur : voir le motif + valider ou contredire
+        actionHtml = `
+          <div style="background:var(--bg);border-radius:8px;padding:10px 12px;margin-bottom:12px">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:4px">Motif donné par le responsable :</div>
+            <div style="font-size:14px;font-weight:600">${exp.motifRetard || "—"}</div>
+            ${exp.commentaireRetard ? '<div style="font-size:13px;color:var(--muted);margin-top:4px">' + exp.commentaireRetard + '</div>' : ''}
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-success btn-sm" onclick="doValiderJustif('${exp.id}')">✅ Valider</button>
+            <button class="btn btn-danger btn-sm" onclick="openContredire('${exp.id}','${exp.numExpedition}')">❌ Contredire</button>
+          </div>
+        `;
+      } else {
+        // Responsable : justifier
+        actionHtml = '<button class="btn btn-warning" onclick="openJustifRetard(\''+exp.id+'\',\''+exp.numExpedition+'\')">✍️ Justifier ce retard</button>';
+      }
+
       return `
         <div class="card card-retard" style="margin-bottom:14px">
           <div class="card-body">
@@ -856,9 +906,9 @@ async function renderJustificatifs() {
               <div style="font-size:13px"><span style="color:var(--muted)">Zone :</span> <strong>${exp.zone}</strong></div>
               <div style="font-size:13px"><span style="color:var(--muted)">Plaque :</span> <strong>${exp.plaque || "-"}</strong></div>
               <div style="font-size:13px"><span style="color:var(--muted)">N° BL :</span> <strong>${numBL}</strong></div>
-              <div style="font-size:13px"><span style="color:var(--muted)">Chef de poste :</span> ${exp.chefPosteEmail || "-"}</div>
+              <div style="font-size:13px"><span style="color:var(--muted)">Responsable :</span> ${exp.responsableEmail || "-"}</div>
             </div>
-            <button class="btn btn-warning" onclick="openJustifRetard('${exp.id}','${exp.numExpedition}')">✍️ Justifier ce retard</button>
+            ${actionHtml}
           </div>
         </div>
       `;
@@ -866,6 +916,49 @@ async function renderJustificatifs() {
   } catch(e) {
     document.getElementById("justif-list").innerHTML = `<div class="empty"><p>Erreur : ${e.message}</p></div>`;
   }
+}
+
+async function doValiderJustif(expId) {
+  try {
+    await api("validerJustif", { expId, controleurEmail: currentUser.email, commentaire: "" });
+    showToast("Justificatif validé ✅", "success");
+    await refreshBadgeRetard();
+    renderCurrentPage();
+  } catch(e) { showToast("Erreur : " + e.message, "error"); }
+}
+
+function openContredire(expId, numExp) {
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">❌ Contredire — ${numExp}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-warning">Vous n'êtes pas d'accord avec le motif donné. Veuillez expliquer pourquoi.</div>
+      <div class="form-group">
+        <label class="form-label">Votre commentaire *</label>
+        <textarea class="form-textarea" id="contredire-comment" rows="3" placeholder="Expliquez pourquoi le motif n'est pas recevable…"></textarea>
+      </div>
+      <div id="contredire-error" class="form-error hidden"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-danger" onclick="submitContredire('${expId}')">Contredire</button>
+    </div>
+  `);
+}
+
+async function submitContredire(expId) {
+  const commentaire = document.getElementById("contredire-comment").value.trim();
+  const errEl = document.getElementById("contredire-error");
+  if (!commentaire) { errEl.textContent = "Le commentaire est obligatoire."; errEl.classList.remove("hidden"); return; }
+  try {
+    await api("contredireJustif", { expId, controleurEmail: currentUser.email, commentaire });
+    closeModal();
+    showToast("Justificatif contredit — le responsable sera informé", "warning");
+    await refreshBadgeRetard();
+    renderCurrentPage();
+  } catch(e) { errEl.textContent = e.message; errEl.classList.remove("hidden"); }
 }
 
 // ─── PAGE : DASHBOARD ─────────────────────────────────────────────────────────
@@ -974,6 +1067,170 @@ async function loadKpi() {
   } catch(e) {
     document.getElementById("kpi-container").innerHTML = `<div class="empty"><p>Erreur : ${e.message}</p></div>`;
   }
+}
+
+// ─── PAGE : GESTION UTILISATEURS (admin) ─────────────────────────────────────
+async function renderUtilisateurs() {
+  const pc = document.getElementById("page-container");
+  pc.innerHTML = `
+    <div class="page-header">
+      <div><div class="page-title">👥 Gestion des utilisateurs</div>
+      <div class="page-subtitle">Ajouter, modifier ou désactiver des comptes @dmcsen.com</div></div>
+      <button class="btn btn-success" onclick="openAddUser()">+ Nouveau compte</button>
+    </div>
+    <div class="page-content" id="users-list"><div class="empty"><p>Chargement…</p></div></div>
+  `;
+  try {
+    const users = await api("getAllUtilisateurs");
+    if (!users.length) {
+      document.getElementById("users-list").innerHTML = '<div class="empty"><p>Aucun utilisateur</p></div>';
+      return;
+    }
+    const roleLabel = r => (ALL_ROLES.find(x=>x.value===r)||{}).label || r;
+    document.getElementById("users-list").innerHTML = `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Site</th><th>Zone</th><th>Statut</th><th></th></tr></thead>
+        <tbody>${users.map(u => `
+          <tr style="${u.actif ? '' : 'opacity:0.4'}">
+            <td style="font-weight:600">${u.nom}</td>
+            <td style="font-family:monospace;font-size:12px">${u.email}</td>
+            <td>${roleLabel(u.role)}</td>
+            <td>${u.site || '—'}</td>
+            <td>${u.zone || '—'}</td>
+            <td>${u.actif ? '<span style="color:var(--success)">Actif</span>' : '<span style="color:var(--danger)">Inactif</span>'}</td>
+            <td style="white-space:nowrap">
+              <button class="btn btn-outline btn-sm" onclick="openEditUser('${u.id}','${u.nom.replace(/'/g,"\\'")}','${u.email}','${u.role}','${u.site||''}','${u.zone||''}',${u.actif})">Modifier</button>
+              ${u.actif ? '<button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="doDeleteUser(\''+u.id+'\')">Désactiver</button>' : '<button class="btn btn-success btn-sm" style="margin-left:4px" onclick="doReactivateUser(\''+u.id+'\')">Réactiver</button>'}
+            </td>
+          </tr>
+        `).join("")}</tbody>
+      </table></div>
+    `;
+  } catch(e) {
+    document.getElementById("users-list").innerHTML = '<div class="empty"><p>Erreur : '+e.message+'</p></div>';
+  }
+}
+
+function openAddUser() {
+  const rolesOpts = ALL_ROLES.map(r => '<option value="'+r.value+'">'+r.label+'</option>').join("");
+  const sitesOpts = SITES.map(s => '<option value="'+s+'">'+s+'</option>').join("");
+  const zonesOpts = ZONES.map(z => '<option value="'+z+'">'+z+'</option>').join("");
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">Ajouter un utilisateur</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Email @dmcsen.com *</label>
+        <input class="form-input" id="user-email" type="email" placeholder="prenom.nom@dmcsen.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Nom complet *</label>
+        <input class="form-input" id="user-nom" placeholder="Prénom Nom">
+      </div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">Rôle *</label>
+          <select class="form-select" id="user-role">${rolesOpts}</select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Site</label>
+          <select class="form-select" id="user-site"><option value="">—</option>${sitesOpts}</select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Zone</label>
+        <select class="form-select" id="user-zone"><option value="">—</option>${zonesOpts}</select>
+      </div>
+      <div id="user-error" class="form-error hidden"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-success" onclick="submitAddUser()">Créer le compte</button>
+    </div>
+  `);
+}
+
+async function submitAddUser() {
+  const email = document.getElementById("user-email").value.trim();
+  const nom = document.getElementById("user-nom").value.trim();
+  const role = document.getElementById("user-role").value;
+  const site = document.getElementById("user-site").value;
+  const zone = document.getElementById("user-zone").value;
+  const errEl = document.getElementById("user-error");
+  if (!email || !nom) { errEl.textContent="Email et nom obligatoires"; errEl.classList.remove("hidden"); return; }
+  errEl.classList.add("hidden");
+  try {
+    await api("addUser", { email, nom, role, site, zone });
+    closeModal();
+    showToast("Compte créé", "success");
+    renderUtilisateurs();
+  } catch(e) { errEl.textContent=e.message; errEl.classList.remove("hidden"); }
+}
+
+function openEditUser(id, nom, email, role, site, zone, actif) {
+  const rolesOpts = ALL_ROLES.map(r => `<option value="${r.value}" ${r.value===role?'selected':''}>${r.label}</option>`).join("");
+  const sitesOpts = SITES.map(s => `<option value="${s}" ${s===site?'selected':''}>${s}</option>`).join("");
+  const zonesOpts = ZONES.map(z => `<option value="${z}" ${z===zone?'selected':''}>${z}</option>`).join("");
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">Modifier — ${nom}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Email : ${email}</p>
+      <div class="form-group">
+        <label class="form-label">Nom</label>
+        <input class="form-input" id="edit-nom" value="${nom}">
+      </div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">Rôle</label>
+          <select class="form-select" id="edit-role">${rolesOpts}</select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Site</label>
+          <select class="form-select" id="edit-site"><option value="">—</option>${sitesOpts}</select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Zone</label>
+        <select class="form-select" id="edit-zone"><option value="">—</option>${zonesOpts}</select>
+      </div>
+      <div id="edit-error" class="form-error hidden"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" onclick="submitEditUser('${id}')">Enregistrer</button>
+    </div>
+  `);
+}
+
+async function submitEditUser(id) {
+  const nom = document.getElementById("edit-nom").value.trim();
+  const role = document.getElementById("edit-role").value;
+  const site = document.getElementById("edit-site").value;
+  const zone = document.getElementById("edit-zone").value;
+  try {
+    await api("updateUser", { id, nom, role, site, zone });
+    closeModal();
+    showToast("Utilisateur modifié", "success");
+    renderUtilisateurs();
+  } catch(e) { document.getElementById("edit-error").textContent=e.message; document.getElementById("edit-error").classList.remove("hidden"); }
+}
+
+async function doDeleteUser(id) {
+  if (!confirm("Désactiver ce compte ?")) return;
+  await api("deleteUser", { id });
+  showToast("Compte désactivé", "success");
+  renderUtilisateurs();
+}
+
+async function doReactivateUser(id) {
+  await api("updateUser", { id, actif: "true" });
+  showToast("Compte réactivé", "success");
+  renderUtilisateurs();
 }
 
 // ─── PAGE : CONFIGURATION ─────────────────────────────────────────────────────
@@ -1348,6 +1605,7 @@ function iconShield() { return `<svg viewBox="0 0 16 16" fill="none" stroke="cur
 function iconChart() { return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 12l4-5 3 3 4-7"/><path d="M1 15h14"/></svg>`; }
 function iconSettings() { return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2"/></svg>`; }
 function iconWarning() { return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2L1 14h14L8 2z"/><path d="M8 6v4"/><circle cx="8" cy="12" r="0.5" fill="currentColor"/></svg>`; }
+function iconUsers() { return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="5.5" cy="4" r="2.5"/><circle cx="10.5" cy="4" r="2.5"/><path d="M0.5 14c0-3 2.2-5 5-5s5 2 5 5"/><path d="M6 14c0-3 2.2-5 5-5s5 2 5 5"/></svg>`; }
 function iconPackage() { return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4l6-3 6 3v8l-6 3-6-3V4z"/><path d="M8 1v14M2 4l6 3 6-3"/></svg>`; }
 </script>
 </body>
