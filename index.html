@@ -364,8 +364,14 @@ async function handleGoogleCredential(response) {
     const credential = response.credential;
     if (!credential) throw new Error("Pas de token reçu de Google.");
     
-    // Envoyer le token au backend Apps Script pour vérification
-    const user = await api("googleLogin", { credential });
+    // POST direct pour éviter la troncature des longs tokens en GET
+    const res = await fetch(SCRIPT_URL, {
+      method: "POST",
+      redirect: "follow",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "action=googleLogin&credential=" + encodeURIComponent(credential),
+    });
+    const user = await res.json();
     loadingEl.classList.add("hidden");
     btnEl.style.display = "flex";
     
