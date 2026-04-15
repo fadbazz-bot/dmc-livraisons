@@ -218,8 +218,82 @@ tr:hover td { background: rgba(240,244,248,0.6); }
 
 /* Responsive */
 @media (max-width: 768px) {
-  .sidebar { display: none; }
+  .sidebar { display: none !important; }
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  .main { padding-bottom: 64px; }
+  .page-header { padding: 12px 16px; flex-wrap: wrap; gap: 8px; }
+  .page-title { font-size: 15px; }
+  .page-content { padding: 12px; }
+  .page-header > div:last-child { width: 100%; overflow-x: auto; }
+  .page-header > div:last-child > * { flex-shrink: 0; }
+  .card-body { padding: 12px 14px; }
+  .card-header { padding: 12px 14px 10px; }
+  .kpi-card { padding: 14px 10px; }
+  .kpi-value { font-size: 26px; }
+  .modal { max-width: 100%; margin: 0; border-radius: 14px 14px 0 0; max-height: 95vh; }
+  .modal-overlay { align-items: flex-end; padding: 0; }
+  .bulk-bar { padding: 10px 12px; flex-wrap: wrap; gap: 8px; bottom: 64px; }
+  .login-card { width: 100%; max-width: 380px; padding: 28px 20px; }
+  table { font-size: 12px; }
+  th, td { padding: 8px 10px; }
+  .btn { font-size: 13px; padding: 9px 14px; }
+  .btn-sm { padding: 6px 10px; font-size: 12px; }
+  .jalon-label { font-size: 9px; }
+  .jalon-dot { width: 22px; height: 22px; }
+}
+
+/* Mobile nav */
+.mobile-nav {
+  display: none;
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: 64px;
+  background: var(--primary);
+  z-index: 500;
+  border-top: 1px solid rgba(255,255,255,0.12);
+  align-items: stretch;
+}
+@media (max-width: 768px) {
+  .mobile-nav { display: flex; }
+}
+.mobile-nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  cursor: pointer;
+  color: rgba(255,255,255,0.55);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 8px 4px;
+  transition: all 0.15s;
+  border: none;
+  background: none;
+  position: relative;
+}
+.mobile-nav-item svg { width: 20px; height: 20px; }
+.mobile-nav-item.active { color: white; }
+.mobile-nav-item.active::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 20%; right: 20%;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 0 0 2px 2px;
+}
+.mobile-nav-badge {
+  position: absolute;
+  top: 6px; right: calc(50% - 18px);
+  background: #e74c3c;
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 1px 4px;
+  min-width: 14px;
+  text-align: center;
 }
 </style>
 </head>
@@ -253,6 +327,8 @@ tr:hover td { background: rgba(240,244,248,0.6); }
     <p class="error-msg hidden" id="login-error" style="text-align:center;">Compte introuvable. Vérifiez votre sélection.</p>
   </div>
 </div>
+
+<nav class="mobile-nav" id="mobile-nav"></nav>
 
 <!-- APP -->
 <div id="app" class="layout hidden">
@@ -479,6 +555,17 @@ function buildSidebar() {
       ${n.badge ? `<span id="badge-justif" class="nav-badge hidden">0</span>` : ""}
     </div>
   `).join("");
+
+  // Mobile nav — top 5 items
+  const mobileItems = filtered.slice(0, 5);
+  const mobileLabels = { 'file': 'File', 'nouvelle-demande': 'Nouveau', 'responsable': 'Prépa', 'justificatifs': 'Retards', 'poste-garde': 'Garde', 'dashboard': 'KPI', 'utilisateurs': 'Comptes', 'config': 'Config' };
+  document.getElementById("mobile-nav").innerHTML = mobileItems.map(n => `
+    <button class="mobile-nav-item" id="mnav-${n.id}" onclick="navigateTo('${n.id}')">
+      ${n.icon()}
+      <span>${mobileLabels[n.id] || n.label}</span>
+      ${n.badge ? '<span id="mbadge-justif" class="mobile-nav-badge hidden">0</span>' : ''}
+    </button>
+  `).join("");
 }
 
 async function refreshBadgeRetard() {
@@ -506,6 +593,10 @@ function navigateTo(page) {
   document.querySelectorAll(".nav-item").forEach(el => el.classList.remove("active"));
   const navEl = document.getElementById("nav-" + page);
   if (navEl) navEl.classList.add("active");
+  // Mobile nav active state
+  document.querySelectorAll(".mobile-nav-item").forEach(el => el.classList.remove("active"));
+  const mnavEl = document.getElementById("mnav-" + page);
+  if (mnavEl) mnavEl.classList.add("active");
   currentPage = page;
   renderCurrentPage();
 }
@@ -542,10 +633,10 @@ async function renderFile() {
           <option value="prete">Prête</option>
           <option value="sortie">Sortie</option>
         </select>
-        <select class="form-select" style="width:160px" id="filter-zone" onchange="renderFile()">
-          <option value="">Toutes les zones</option>
-          ${ZONES.map(z=>`<option value="${z}">${z}</option>`).join("")}
-        </select>
+        ${(currentUser.role === 'responsable' && currentUser.zone)
+          ? '<span class="badge" style="background:var(--primary);color:white;padding:6px 14px;font-size:13px">📍 ' + currentUser.zone + '</span>'
+          : '<select class="form-select" style="width:160px" id="filter-zone" onchange="renderFile()"><option value="">Toutes les zones</option>' + ZONES.map(z => '<option value="' + z + '">' + z + '</option>').join('') + '</select>'
+        }
         <button class="btn btn-outline btn-sm" onclick="renderFile()">↻ Actualiser</button>
       </div>
     </div>
@@ -1397,7 +1488,38 @@ async function loadKpi() {
             `).join("") : '<p style="color:var(--muted);font-size:13px">Aucun retard sur la période</p>'}
           </div>
         </div>
+      ${(kpi.classementResp && kpi.classementResp.length > 0) ? `
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-header">
+          <div class="card-title">🏆 Classement des responsables</div>
+        </div>
+        <div class="card-body">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>#</th><th>Responsable</th><th>Zone</th><th>Expéditions</th><th>≤ 30 min</th><th>Taux</th><th>Moy.</th></tr></thead>
+              <tbody>
+                ${kpi.classementResp.map((r, i) => {
+                  const medals = ['🥇','🥈','🥉'];
+                  const medal = medals[i] || (i+1);
+                  const taux = r.total ? Math.round(r.sous30/r.total*100) : null;
+                  const isMe = currentUser.email && r.email && r.email.toLowerCase() === currentUser.email.toLowerCase();
+                  const highlight = isMe ? 'background:rgba(26,58,92,0.07);font-weight:700;' : '';
+                  return `<tr style="${highlight}">
+                    <td style="font-size:16px;text-align:center">${medal}</td>
+                    <td>${r.nom || r.email}${isMe ? ' <span style="font-size:10px;background:var(--primary);color:white;border-radius:4px;padding:1px 6px">Moi</span>' : ''}</td>
+                    <td>${r.zone || '—'}</td>
+                    <td>${r.total}</td>
+                    <td>${r.sous30}</td>
+                    <td><span class="duree-pill ${kpiColorClass(taux)}">${taux !== null ? taux+'%' : '—'}</span></td>
+                    <td>${r.moyenneMins !== null ? fmtDuree(r.moyenneMins) : '—'}</td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
+      ` : ''}
     `;
   } catch(e) {
     document.getElementById("kpi-container").innerHTML = `<div class="empty"><p>Erreur : ${e.message}</p></div>`;
