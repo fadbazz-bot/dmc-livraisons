@@ -376,6 +376,21 @@ const ALL_ROLES = [
   { value: "controleur", label: "Contrôleur" },
 ];
 const SITES = ["Dakar", "Diamniadio"];
+
+// Magasins par site — avec leur email de notification
+const MAGASINS = [
+  { id:"showroom_diam",   label:"Showroom Diamniadio",              site:"Diamniadio", zone:"Showroom",             email:"comptoir.diam@dmcsen.com",           nom:"Abdoul Aziz Sall" },
+  { id:"depot_diam",     label:"Dépôt Quincaillerie Diamniadio",   site:"Diamniadio", zone:"Dépôt Quincaillerie",  email:"depot.diamniadio@dmcsen.com",        nom:"Mankeur Fall" },
+  { id:"depot_diam2",    label:"Dépôt Quincaillerie Diam (Moustapha)", site:"Diamniadio", zone:"Dépôt Quincaillerie", email:"moustapha.mare@dmcsen.com",        nom:"Moustapha Mare" },
+  { id:"parc_diam",      label:"Parc Acier Diamniadio",             site:"Diamniadio", zone:"Parc Acier",           email:"livraison.parc.diamniadio@dmcsen.com", nom:"Serigne Sall Ndiaye" },
+  { id:"depot_dakar",    label:"Dépôt Quincaillerie Dakar",         site:"Dakar",      zone:"Dépôt Quincaillerie",  email:"depot_quincaillerie_mco1@dmcsen.com", nom:"Samba Ndiaye" },
+  { id:"depot_dakar2",   label:"Dépôt Quincaillerie Dakar (Souleymane)", site:"Dakar", zone:"Dépôt Quincaillerie", email:"souleymane.diallo@dmcsen.com",        nom:"Souleymane Diallo" },
+  { id:"showroom_dakar", label:"Showroom Dakar",                    site:"Dakar",      zone:"Showroom",             email:"comptoir.dkr@dmcsen.com",            nom:"Adolphe Gomis" },
+  { id:"showroom_dakar2",label:"Showroom Dakar (Barra)",            site:"Dakar",      zone:"Showroom",             email:"agentrayon2.dkr@dmcsen.com",         nom:"Barra Diop" },
+  { id:"parc_dakar",     label:"Parc Acier Dakar",                  site:"Dakar",      zone:"Parc Acier",           email:"livraison.parc.dkr@dmcsen.com",      nom:"Sama Thioune" },
+  { id:"atelierSAV",     label:"Atelier SAV Diamniadio",            site:"Diamniadio", zone:"Dépôt",                email:"fadel.kwayes@dmcsen.com",            nom:"Fadel Kwayes" },
+  { id:"labo",           label:"Laboratoire Diamniadio",            site:"Diamniadio", zone:"Dépôt",                email:"labo@dmcsen.com",                    nom:"Mame Marie Fall" },
+];
 const ROLE_LABELS = {
   admin: "Administrateur", commercial: "Commercial",
   responsable: "Resp. Prépa/Livraison", chef_poste: "Chef de Poste",
@@ -626,7 +641,7 @@ async function renderFile() {
         <div class="page-subtitle" id="file-subtitle">Chargement…</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
-        <select class="form-select" style="width:160px" id="filter-statut" onchange="renderFile()">
+        <select class="form-select" style="width:160px" id="filter-statut" onchange="applyFileFilters()">
           <option value="">Tous les statuts</option>
           <option value="en_attente">En attente</option>
           <option value="feu_vert">Feu vert</option>
@@ -635,7 +650,7 @@ async function renderFile() {
         </select>
         ${(currentUser.role === 'responsable' && currentUser.zone)
           ? '<span class="badge" style="background:var(--primary);color:white;padding:6px 14px;font-size:13px">📍 ' + currentUser.zone + '</span>'
-          : '<select class="form-select" style="width:160px" id="filter-zone" onchange="renderFile()"><option value="">Toutes les zones</option>' + ZONES.map(z => '<option value="' + z + '">' + z + '</option>').join('') + '</select>'
+          : '<select class="form-select" style="width:160px" id="filter-zone" onchange="applyFileFilters()"><option value="">Toutes les zones</option>' + ZONES.map(z => '<option value="' + z + '">' + z + '</option>').join('') + '</select>'
         }
         <button class="btn btn-outline btn-sm" onclick="renderFile()">↻ Actualiser</button>
       </div>
@@ -658,11 +673,15 @@ async function renderFile() {
 
   try {
     const params = {};
-    const filtStatut = document.getElementById("filter-statut")?.value;
-    const filtZone = document.getElementById("filter-zone")?.value;
+    const filtStatut = document.getElementById("filter-statut")?.value || "";
+    const filtZone = document.getElementById("filter-zone")?.value || "";
     if (filtStatut) params.statut = filtStatut;
     if (filtZone) params.zone = filtZone;
     if (currentUser.role === "responsable" && currentUser.zone) params.zone = params.zone || currentUser.zone;
+
+    // Stocker les filtres actifs pour que filterFile() puisse les utiliser
+    window._lastFiltStatut = filtStatut;
+    window._lastFiltZone = filtZone;
 
     allCommandes = await api("getCommandes", params);
     const total = allCommandes.reduce((a,c) => a + (c.expeditions?.length||0), 0);
@@ -677,6 +696,15 @@ async function renderFile() {
   } catch(e) {
     document.getElementById("file-list").innerHTML = `<div class="empty"><p>Erreur : ${e.message}</p></div>`;
   }
+}
+
+// Applique les filtres sans rechargement réseau
+function applyFileFilters() {
+  const filtStatut = document.getElementById("filter-statut")?.value || "";
+  const filtZone = document.getElementById("filter-zone")?.value || "";
+  window._lastFiltStatut = filtStatut;
+  window._lastFiltZone = filtZone;
+  filterFile();
 }
 
 // ─── SÉLECTION MULTIPLE ───────────────────────────────────────────────────────
@@ -769,8 +797,23 @@ function openBulkFeuVert(exps, nums) {
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div class="modal-body">
-      <div class="alert alert-info">Le client est arrivé. Vous allez donner le feu vert pour :</div>
+      <div class="alert alert-info">Le client est arrivé. Les informations du véhicule sont obligatoires.</div>
       <div style="margin:12px 0;padding:10px;background:var(--bg);border-radius:8px;font-family:monospace;font-size:13px">${nums}</div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">Plaque *</label>
+          <input class="form-input" id="bulk-fv-plaque" placeholder="DK-1234-A" oninput="this.value=this.value.toUpperCase()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Chauffeur *</label>
+          <input class="form-input" id="bulk-fv-chauffeur" placeholder="Prénom Nom">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">N° Tel chauffeur *</label>
+        <input class="form-input" id="bulk-fv-tel" placeholder="77 000 00 00">
+      </div>
+      <div id="bulk-fv-error" class="form-error hidden"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
@@ -780,11 +823,19 @@ function openBulkFeuVert(exps, nums) {
 }
 
 async function submitBulkFeuVert() {
+  const plaque = document.getElementById("bulk-fv-plaque")?.value.trim() || "";
+  const chauffeur = document.getElementById("bulk-fv-chauffeur")?.value.trim() || "";
+  const tel = document.getElementById("bulk-fv-tel")?.value.trim() || "";
+  const errEl = document.getElementById("bulk-fv-error");
+  if (!plaque || !chauffeur || !tel) {
+    errEl.textContent = "Plaque, chauffeur et téléphone obligatoires.";
+    errEl.classList.remove("hidden"); return;
+  }
   const ids = [...selectedExpIds];
   let ok = 0, errors = [];
   for (const expId of ids) {
     try {
-      await api("feuVert", { expId, acteurEmail: currentUser.email, acteurNom: currentUser.nom });
+      await api("feuVert", { expId, acteurEmail: currentUser.email, acteurNom: currentUser.nom, plaque, chauffeur, numeroChauffeur: tel });
       ok++;
     } catch(e) { errors.push(e.message); }
   }
@@ -798,16 +849,21 @@ function openBulkT2(exps, nums) {
   const nowVal = new Date().toISOString().slice(0,16);
   openModal(`
     <div class="modal-header">
-      <div class="modal-title">📦 Fin de livraison parc — ${exps.length} expédition(s)</div>
+      <div class="modal-title">📦 Fin de préparation groupée — ${exps.length} expédition(s)</div>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div class="modal-body">
       <div style="margin-bottom:12px;padding:10px;background:var(--bg);border-radius:8px;font-family:monospace;font-size:13px">${nums}</div>
       <div class="form-group">
+        <label class="form-label">N° BL (EV-MC) *</label>
+        <input class="form-input" id="bulk-t2-bl" placeholder="EV-MC123456" oninput="autoFormat(this,'EV-MC')" style="font-family:monospace">
+        <div class="form-hint">Ce BL sera appliqué à toutes les expéditions sélectionnées</div>
+      </div>
+      <div class="form-group">
         <label class="form-label">Heure de fin de livraison *</label>
         <input type="datetime-local" class="form-input" id="bulk-t2-heure" value="${nowVal}">
-        <div class="form-hint">Cette heure sera appliquée à toutes les expéditions sélectionnées</div>
       </div>
+      <div id="bulk-t2-error" class="form-error hidden"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
@@ -818,11 +874,17 @@ function openBulkT2(exps, nums) {
 
 async function submitBulkT2() {
   const heureT2 = document.getElementById("bulk-t2-heure").value;
+  const numeroBL = document.getElementById("bulk-t2-bl")?.value.trim() || "";
+  const errEl = document.getElementById("bulk-t2-error");
+  if (!numeroBL || !numeroBL.match(/^EV-MC/i)) {
+    errEl.textContent = "N° BL obligatoire (format EV-MC...).";
+    errEl.classList.remove("hidden"); return;
+  }
   const ids = [...selectedExpIds];
   let ok = 0, errors = [];
   for (const expId of ids) {
     try {
-      await api("jalon_t2", { expId, acteurEmail: currentUser.email, acteurNom: currentUser.nom, heureT2 });
+      await api("jalon_t2", { expId, acteurEmail: currentUser.email, acteurNom: currentUser.nom, heureT2, numeroBL });
       ok++;
     } catch(e) { errors.push(e.message); }
   }
@@ -908,6 +970,7 @@ function renderCmdCard(cmd) {
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
           <div>
             <span style="font-weight:700;font-size:15px;color:var(--primary)">${cmd.numCmdNav || "Sans N° Cmd"}</span>
+            ${cmd.nomClient ? `<span style="font-size:13px;margin-left:8px;color:var(--text)">· ${cmd.nomClient}</span>` : ''}
             <span style="color:var(--muted);font-size:13px;margin-left:8px">${cmd.site || ""}</span>
             ${enRetard ? '<span style="color:var(--warning);font-size:12px;font-weight:600;margin-left:8px">⏰ Retard</span>' : ""}
           </div>
@@ -1016,6 +1079,7 @@ function renderExpActions(exp, cmd) {
 
 // ─── PAGE : NOUVELLE DEMANDE ──────────────────────────────────────────────────
 async function renderNouvelleDemande() {
+  const sitesOpts = SITES.map(s => `<option value="${s}">${s}</option>`).join("");
   document.getElementById("page-container").innerHTML = `
     <div class="page-header">
       <div>
@@ -1024,22 +1088,28 @@ async function renderNouvelleDemande() {
       </div>
     </div>
     <div class="page-content">
-      <div style="max-width:600px">
+      <div style="max-width:640px">
         <div class="card">
           <div class="card-header"><div class="card-title">Informations commande</div></div>
           <div class="card-body">
             <div class="grid-2">
               <div class="form-group">
-                <label class="form-label">N° Commande NAV <span>(optionnel)</span></label>
+                <label class="form-label">N° Commande NAV *</label>
                 <input class="form-input" id="nd-cmdnav" placeholder="CV-MC2502353" oninput="autoFormat(this,'CV-MC')">
                 <div class="form-hint">Format : CV-MC suivi des chiffres</div>
               </div>
               <div class="form-group">
-                <label class="form-label">Site <span>(optionnel)</span></label>
-                <select class="form-select" id="nd-site">
-                  <option value="">Tous les sites…</option>
-                  ${SITES.map(s=>`<option value="${s}">${s}</option>`).join("")}
-                </select>
+                <label class="form-label">Nom du client *</label>
+                <input class="form-input" id="nd-nomclient" placeholder="Prénom NOM ou Société">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Site de livraison *</label>
+              <div style="display:flex;gap:10px">
+                ${SITES.map(s => `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px">
+                  <input type="radio" name="nd-site-radio" value="${s}" onchange="updateMagasinsSelect()">
+                  <span>${s}</span>
+                </label>`).join("")}
               </div>
             </div>
 
@@ -1049,7 +1119,7 @@ async function renderNouvelleDemande() {
               <button class="btn btn-outline btn-sm" onclick="addExpField()" style="margin-top:8px">
                 + Ajouter une expédition
               </button>
-              <div class="form-hint">Chaque N° EX correspond à un dépôt de livraison distinct</div>
+              <div class="form-hint">Chaque ligne correspond à un dépôt/magasin de livraison distinct</div>
             </div>
 
             <div id="nd-error" class="form-error hidden"></div>
@@ -1065,7 +1135,22 @@ async function renderNouvelleDemande() {
       </div>
     </div>
   `;
-  addExpField(); // Premier champ expédition
+  addExpField();
+}
+
+function getMagasinsSite() {
+  const checked = document.querySelector("input[name='nd-site-radio']:checked");
+  if (!checked) return MAGASINS;
+  return MAGASINS.filter(m => m.site === checked.value);
+}
+
+function updateMagasinsSelect() {
+  // Met à jour tous les selects magasin existants selon le site choisi
+  const mags = getMagasinsSite();
+  const opts = '<option value="">Choisir le magasin…</option>' + mags.map(m => `<option value="${m.id}">${m.label}</option>`).join("");
+  document.querySelectorAll(".exp-magasin").forEach(sel => {
+    sel.innerHTML = opts;
+  });
 }
 
 function addExpField() {
@@ -1074,20 +1159,31 @@ function addExpField() {
   const div = document.createElement("div");
   div.className = "exp-group";
   div.id = `exp-group-${idx}`;
+  const mags = getMagasinsSite();
+  const optsM = '<option value="">Choisir le magasin…</option>' + mags.map(m => `<option value="${m.id}">${m.label}</option>`).join("");
   div.innerHTML = `
-    <div class="exp-row">
-      <div class="form-group">
+    <div class="exp-row" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;padding:12px;background:var(--bg);border-radius:8px;border:1px solid var(--border)">
+      <div class="form-group" style="flex:0 0 160px">
         <label class="form-label">N° Expédition *</label>
         <input class="form-input exp-num" placeholder="EX-2504664" oninput="autoFormat(this,'EX-')">
       </div>
-      <div class="form-group">
-        <label class="form-label">Zone de livraison *</label>
-        <select class="form-select exp-zone">
-          <option value="">Choisir…</option>
-          ${ZONES.map(z=>`<option value="${z}">${z}</option>`).join("")}
-        </select>
+      <div class="form-group" style="flex:1;min-width:200px">
+        <label class="form-label">Magasin de livraison *</label>
+        <select class="form-select exp-magasin">${optsM}</select>
       </div>
-      ${idx > 0 ? `<button class="btn btn-danger btn-sm exp-remove" onclick="removeExpField(${idx})" style="margin-bottom:0;flex-shrink:0">✕</button>` : ""}
+      <div class="form-group" style="flex:1;min-width:180px">
+        <label class="form-label">N° Tel chauffeur <span>(optionnel)</span></label>
+        <input class="form-input exp-tel" placeholder="77 000 00 00">
+      </div>
+      <div class="form-group" style="flex:0 0 160px">
+        <label class="form-label">Nom chauffeur <span>(opt.)</span></label>
+        <input class="form-input exp-chauffeur" placeholder="Prénom Nom">
+      </div>
+      <div class="form-group" style="flex:0 0 140px">
+        <label class="form-label">Immatriculation <span>(opt.)</span></label>
+        <input class="form-input exp-plaque" placeholder="DK-1234-A" oninput="this.value=this.value.toUpperCase()">
+      </div>
+      ${idx > 0 ? `<button class="btn btn-danger btn-sm" onclick="removeExpField(${idx})" style="margin-bottom:0;flex-shrink:0">✕</button>` : ""}
     </div>
   `;
   list.appendChild(div);
@@ -1107,8 +1203,23 @@ function autoFormat(input, prefix) {
 
 async function submitNouvelleDemande() {
   const numCmdNav = document.getElementById("nd-cmdnav").value.trim();
-  const site = document.getElementById("nd-site").value;
+  const nomClient = document.getElementById("nd-nomclient").value.trim();
+  const siteRadio = document.querySelector("input[name='nd-site-radio']:checked");
+  const site = siteRadio ? siteRadio.value : "";
   const errEl = document.getElementById("nd-error");
+
+  if (!numCmdNav || !numCmdNav.match(/^CV-MC\d+$/)) {
+    errEl.textContent = "N° Commande NAV obligatoire (format CV-MC suivi de chiffres).";
+    errEl.classList.remove("hidden"); return;
+  }
+  if (!nomClient) {
+    errEl.textContent = "Nom du client obligatoire.";
+    errEl.classList.remove("hidden"); return;
+  }
+  if (!site) {
+    errEl.textContent = "Sélectionnez un site (Dakar ou Diamniadio).";
+    errEl.classList.remove("hidden"); return;
+  }
 
   // Collecter les expéditions
   const expGroups = document.querySelectorAll(".exp-group");
@@ -1117,13 +1228,28 @@ async function submitNouvelleDemande() {
 
   expGroups.forEach(g => {
     const num = g.querySelector(".exp-num").value.trim();
-    const zone = g.querySelector(".exp-zone").value;
-    if (!num || !zone) { valid = false; return; }
+    const magId = g.querySelector(".exp-magasin").value;
+    const tel = g.querySelector(".exp-tel")?.value.trim() || "";
+    const chauffeur = g.querySelector(".exp-chauffeur")?.value.trim() || "";
+    const plaque = g.querySelector(".exp-plaque")?.value.trim() || "";
+    if (!num || !magId) { valid = false; return; }
     if (!num.match(/^EX-\d+$/)) { valid = false; return; }
-    expeditions.push({ numExpedition: num, zone });
+    const mag = MAGASINS.find(m => m.id === magId);
+    expeditions.push({
+      numExpedition: num,
+      zone: mag ? mag.zone : "",
+      magasinId: magId,
+      magasinLabel: mag ? mag.label : "",
+      magasinEmail: mag ? mag.email : "",
+      magasinNom: mag ? mag.nom : "",
+      tel, chauffeur, plaque,
+    });
   });
 
-  if (!valid || !expeditions.length) { errEl.textContent = "Vérifiez les N° d'expédition (format EX-XXXXX) et les zones."; errEl.classList.remove("hidden"); return; }
+  if (!valid || !expeditions.length) {
+    errEl.textContent = "Vérifiez les N° d'expédition (format EX-XXXXX) et les magasins.";
+    errEl.classList.remove("hidden"); return;
+  }
 
   errEl.classList.add("hidden");
   const btn = document.getElementById("nd-submit");
@@ -1132,13 +1258,14 @@ async function submitNouvelleDemande() {
 
   try {
     await api("createCommande", {
-      numCmdNav: numCmdNav || "",
+      numCmdNav,
+      nomClient,
       site,
       commercialEmail: currentUser.email,
       commercialNom: currentUser.nom,
       expeditions,
     });
-    showToast("Instruction envoyée — notification Chat envoyée", "success");
+    showToast("Instruction envoyée — les responsables ont été notifiés", "success");
     navigateTo("file");
   } catch(e) {
     errEl.textContent = e.message;
@@ -1739,11 +1866,22 @@ async function loadMotifsList() {
           <tr>
             <td>${m.libelle}</td>
             <td><span style="color:var(--muted);font-size:12px">${m.categorie}</span></td>
-            <td><button class="btn btn-danger btn-sm" onclick="desactiverMotif('${m.id}')">Désactiver</button></td>
+            <td style="display:flex;gap:6px">
+              <button class="btn btn-outline btn-sm" onclick="desactiverMotif('${m.id}')">Désactiver</button>
+              <button class="btn btn-danger btn-sm" onclick="supprimerMotif('${m.id}','${m.libelle.replace(/'/g,"\'")}')">🗑 Supprimer</button>
+            </td>
           </tr>
         `).join("")}</tbody>
       </table></div>`
     : "<p style='color:var(--muted);font-size:13px'>Aucun motif</p>";
+}
+
+async function supprimerMotif(id, libelle) {
+  if (!confirm(`Supprimer définitivement "${libelle}" ?`)) return;
+  await api("deleteMotifRetard", { id });
+  allMotifs = await api("getMotifsRetard");
+  loadMotifsList();
+  showToast("Motif supprimé", "success");
 }
 
 async function doTestWebhook() {
@@ -1800,18 +1938,37 @@ async function desactiverMotif(id) {
 
 // ─── MODALS ────────────────────────────────────────────────────────────────────
 
-// Feu vert (T1)
+// Feu vert (T1) — infos véhicule obligatoires
 function openFeuVert(expId, numExp) {
+  // Pré-remplir si déjà renseigné (depuis la création)
+  const allExps = allCommandes.flatMap(c => c.expeditions || []);
+  const exp = allExps.find(e => e.id === expId);
+  const plaqueVal = exp?.plaque || "";
+  const chauffeurVal = exp?.chauffeur || "";
+  const telVal = exp?.numeroChauffeur || "";
+
   openModal(`
     <div class="modal-header">
-      <div class="modal-title">✅ Donner le feu vert — ${numExp}</div>
+      <div class="modal-title">✅ Feu vert — ${numExp}</div>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div class="modal-body">
-      <div class="alert alert-info">
-        Le client est arrivé. En confirmant, vous autorisez la livraison.
-        Le responsable de dépôt pourra alors enregistrer la fin de livraison.
+      <div class="alert alert-info">Le client est arrivé. Les informations du véhicule sont obligatoires avant de donner le feu vert.</div>
+      <div class="grid-2" style="margin-top:12px">
+        <div class="form-group">
+          <label class="form-label">Plaque d'immatriculation *</label>
+          <input class="form-input" id="fv-plaque" placeholder="DK-1234-A" value="${plaqueVal}" oninput="this.value=this.value.toUpperCase()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nom du chauffeur *</label>
+          <input class="form-input" id="fv-chauffeur" placeholder="Prénom Nom" value="${chauffeurVal}">
+        </div>
       </div>
+      <div class="form-group">
+        <label class="form-label">N° Tel chauffeur *</label>
+        <input class="form-input" id="fv-tel" placeholder="77 000 00 00" value="${telVal}">
+      </div>
+      <div id="fv-error" class="form-error hidden"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
@@ -1821,8 +1978,15 @@ function openFeuVert(expId, numExp) {
 }
 
 async function submitFeuVert(expId) {
+  const plaque = document.getElementById("fv-plaque")?.value.trim() || "";
+  const chauffeur = document.getElementById("fv-chauffeur")?.value.trim() || "";
+  const tel = document.getElementById("fv-tel")?.value.trim() || "";
+  const errEl = document.getElementById("fv-error");
+  if (!plaque) { errEl.textContent = "Plaque obligatoire."; errEl.classList.remove("hidden"); return; }
+  if (!chauffeur) { errEl.textContent = "Nom du chauffeur obligatoire."; errEl.classList.remove("hidden"); return; }
+  if (!tel) { errEl.textContent = "N° de téléphone chauffeur obligatoire."; errEl.classList.remove("hidden"); return; }
   try {
-    await api("feuVert", { expId, acteurEmail: currentUser.email, acteurNom: currentUser.nom });
+    await api("feuVert", { expId, acteurEmail: currentUser.email, acteurNom: currentUser.nom, plaque, chauffeur, numeroChauffeur: tel });
     closeModal();
     showToast("Feu vert accordé — notification envoyée", "success");
     renderCurrentPage();
@@ -1834,15 +1998,21 @@ function openT2(expId, numExp) {
   const now = new Date().toISOString().slice(0,16);
   openModal(`
     <div class="modal-header">
-      <div class="modal-title">📦 Fin de livraison parc — ${numExp}</div>
+      <div class="modal-title">📦 Fin de préparation — ${numExp}</div>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">N° Expédition validé (N° BL) *</label>
+        <input class="form-input" id="t2-bl" placeholder="EV-MC123456" oninput="autoFormat(this,'EV-MC')" style="font-family:monospace">
+        <div class="form-hint">Format : EV-MC suivi des chiffres (numéro de BL)</div>
+      </div>
       <div class="form-group">
         <label class="form-label">Heure de fin de livraison *</label>
         <input type="datetime-local" class="form-input" id="t2-heure" value="${now}">
         <div class="form-hint">Saisissez l'heure NAV ou laissez à maintenant</div>
       </div>
+      <div id="t2-error" class="form-error hidden"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
@@ -1852,9 +2022,15 @@ function openT2(expId, numExp) {
 }
 
 async function submitT2(expId) {
+  const numeroBL = document.getElementById("t2-bl").value.trim();
   const heureT2 = document.getElementById("t2-heure").value;
+  const errEl = document.getElementById("t2-error");
+  if (!numeroBL || !numeroBL.match(/^EV-MC/i)) {
+    errEl.textContent = "N° BL obligatoire (format EV-MC suivi des chiffres).";
+    errEl.classList.remove("hidden"); return;
+  }
   try {
-    await api("jalon_t2", { expId, acteurEmail: currentUser.email, acteurNom: currentUser.nom, heureT2 });
+    await api("jalon_t2", { expId, acteurEmail: currentUser.email, acteurNom: currentUser.nom, heureT2, numeroBL });
     closeModal();
     showToast("T2 enregistré — en attente poste de garde", "success");
     renderCurrentPage();
@@ -1863,11 +2039,12 @@ async function submitT2(expId) {
 
 // T3 — Sortie poste de garde
 function openT3(expId, numExp) {
-  const motifsHtml = allMotifs.map(m => `
-    <label class="motif-item" onclick="this.classList.toggle('selected');this.querySelector('input').checked=!this.querySelector('input').checked">
-      <input type="checkbox" value="${m.libelle}" style="display:none"> ${m.libelle}
-    </label>
-  `).join("");
+  // Récupérer les infos connues de l'expédition
+  const allExps = allCommandes.flatMap(c => c.expeditions || []);
+  const exp = allExps.find(e => e.id === expId);
+  const plaqueConnue = exp?.plaque || "";
+  const chauffeurConnu = exp?.chauffeur || "";
+  const blConnu = exp?.numeroBL || "";
 
   openModal(`
     <div class="modal-header">
@@ -1875,28 +2052,38 @@ function openT3(expId, numExp) {
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div class="modal-body">
+      ${plaqueConnue ? `
+      <div class="alert alert-info" style="margin-bottom:12px">
+        Véhicule attendu : <strong>${plaqueConnue}</strong> · Chauffeur : <strong>${chauffeurConnu || "—"}</strong>
+      </div>` : ''}
       <div class="grid-2">
         <div class="form-group">
           <label class="form-label">Plaque d'immatriculation *</label>
-          <input class="form-input" id="t3-plaque" placeholder="DK-1234-A" oninput="this.value=this.value.toUpperCase()">
+          <input class="form-input" id="t3-plaque" placeholder="DK-1234-A"
+            value="${plaqueConnue}"
+            oninput="this.value=this.value.toUpperCase();checkPlaqueMatch()">
+          <div id="t3-plaque-warn" class="form-hint hidden" style="color:var(--warning)">
+            ⚠️ Cette plaque diffère de celle attendue — vous pouvez la corriger
+          </div>
         </div>
         <div class="form-group">
-          <label class="form-label">Nom du chauffeur</label>
-          <input class="form-input" id="t3-chauffeur" placeholder="Prénom Nom">
+          <label class="form-label">Nom du chauffeur *</label>
+          <input class="form-input" id="t3-chauffeur" placeholder="Prénom Nom" value="${chauffeurConnu}">
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label">N° Bon de Livraison * <span>(scan QR ou saisie)</span></label>
+        <label class="form-label">N° Bon de Livraison *</label>
         <div style="display:flex;gap:8px">
-          <input class="form-input" id="t3-bl" placeholder="BL-2504664 ou scanner…" style="font-family:monospace">
+          <input class="form-input" id="t3-bl" placeholder="${blConnu || 'EV-MC123456 ou scanner…'}"
+            value="${blConnu}" style="font-family:monospace">
           <button class="btn btn-outline btn-sm" onclick="activateScan()" title="Mode scan douchette">⬛ QR</button>
         </div>
-        <div id="scan-status" class="form-hint hidden" style="color:var(--success)">Mode scan actif — pointez la douchette vers le QR code</div>
+        <div id="scan-status" class="form-hint hidden" style="color:var(--success)">Mode scan actif — pointez la douchette</div>
       </div>
       <div class="form-group">
-        <label class="form-label">Photo du BL <span>(facultatif)</span></label>
-        <div class="scan-zone" onclick="document.getElementById('t3-photo-input').click()">
-          📷 Appuyez pour prendre une photo ou importer
+        <label class="form-label">Photo du BL *</label>
+        <div class="scan-zone" id="t3-photo-zone" onclick="document.getElementById('t3-photo-input').click()" style="cursor:pointer">
+          📷 Prendre une photo du BL (obligatoire)
           <input type="file" id="t3-photo-input" accept="image/*" capture="environment" class="hidden" onchange="previewPhoto(this)">
         </div>
         <img id="t3-photo-preview" class="photo-preview hidden">
@@ -1908,46 +2095,43 @@ function openT3(expId, numExp) {
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
-      <button class="btn btn-success" onclick="submitT3('${expId}')">✅ Confirmer la sortie</button>
+      <button class="btn btn-success" onclick="submitT3('${expId}','${plaqueConnue}')">✅ Confirmer la sortie</button>
     </div>
   `);
 
   // Afficher le message retard si déjà > 30 min depuis T0
-  const exp = (allCommandes.flatMap(c=>c.expeditions||[])).find(e=>e.id===expId);
   if (exp && exp.t0) {
     const mins = Math.round((Date.now() - new Date(exp.t0)) / 60000);
     if (mins > 30) document.getElementById("t3-retard-info").classList.remove("hidden");
   }
 }
 
-function activateScan() {
-  const input = document.getElementById("t3-bl");
-  const status = document.getElementById("scan-status");
-  input.focus();
-  status.classList.remove("hidden");
+function checkPlaqueMatch() {
+  const warnEl = document.getElementById("t3-plaque-warn");
+  if (!warnEl) return;
+  const plaqueInput = document.getElementById("t3-plaque").value.trim();
+  // La plaque attendue est dans le texte de l'alerte info — on la retrouve via data-attr
+  // En fait on la passe via closure — on utilise un attribute sur l'input
+  const expected = document.querySelector(".alert.alert-info strong")?.textContent || "";
+  if (expected && plaqueInput && plaqueInput !== expected) {
+    warnEl.classList.remove("hidden");
+  } else {
+    warnEl.classList.add("hidden");
+  }
 }
 
-function previewPhoto(input) {
-  const file = input.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    const img = document.getElementById("t3-photo-preview");
-    img.src = e.target.result;
-    img.classList.remove("hidden");
-  };
-  reader.readAsDataURL(file);
-}
-
-async function submitT3(expId) {
+async function submitT3(expId, plaqueAttendue) {
   const plaque = document.getElementById("t3-plaque").value.trim();
   const chauffeur = document.getElementById("t3-chauffeur").value.trim();
   const numeroBL = document.getElementById("t3-bl").value.trim();
-  const photoBlUrl = document.getElementById("t3-photo-preview").src || "";
+  const photoPreview = document.getElementById("t3-photo-preview");
+  const photoBlUrl = photoPreview && !photoPreview.classList.contains("hidden") ? photoPreview.src : "";
   const errEl = document.getElementById("t3-error");
 
   if (!plaque) { errEl.textContent = "Plaque d'immatriculation obligatoire."; errEl.classList.remove("hidden"); return; }
+  if (!chauffeur) { errEl.textContent = "Nom du chauffeur obligatoire."; errEl.classList.remove("hidden"); return; }
   if (!numeroBL) { errEl.textContent = "N° de Bon de Livraison obligatoire."; errEl.classList.remove("hidden"); return; }
+  if (!photoBlUrl) { errEl.textContent = "Photo du BL obligatoire — veuillez prendre une photo."; errEl.classList.remove("hidden"); return; }
 
   errEl.classList.add("hidden");
 
@@ -1959,6 +2143,7 @@ async function submitT3(expId) {
       plaque,
       chauffeur,
       numeroBL,
+      plaqueAttendue,
       photoBlUrl: photoBlUrl.startsWith("data:") ? photoBlUrl : "",
     });
     closeModal();
@@ -1968,17 +2153,18 @@ async function submitT3(expId) {
     showToast(msg, result.enRetard ? "warning" : "success");
     renderCurrentPage();
   } catch(e) {
-    errEl.textContent = e.message;
-    errEl.classList.remove("hidden");
+    showToast("Erreur : " + e.message, "error");
   }
 }
 
-// Justifier retard
+
+// Justifier un retard (responsable)
 function openJustifRetard(expId, numExp) {
-  const motifsHtml = allMotifs.map(m => `
-    <label class="motif-item" onclick="this.classList.toggle('selected');this.querySelector('input').checked=!this.querySelector('input').checked">
-      <input type="checkbox" value="${m.libelle}" style="display:none"> ${m.libelle}
-    </label>
+  const motifsHtml = allMotifs.map((m, i) => `
+    <div class="motif-item" id="motif-item-${i}" onclick="toggleMotifItem(this)">
+      <input type="checkbox" class="motif-cb" id="motif-cb-${i}" value="${m.libelle}">
+      <span>${m.libelle}</span>
+    </div>
   `).join("");
 
   openModal(`
@@ -1987,15 +2173,16 @@ function openJustifRetard(expId, numExp) {
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div class="modal-body">
-      <div class="alert alert-warning">Cette expédition est sortie avec un délai supérieur à 30 minutes. Veuillez justifier le retard.</div>
+      <div class="alert alert-warning">Cette expédition est sortie avec un délai > 30 min. Veuillez justifier le retard.</div>
       <div class="form-group">
-        <label class="form-label">Motif(s) *</label>
-        <div class="motif-grid">${motifsHtml}</div>
+        <label class="form-label">Motif(s) * <span style="color:var(--muted);font-size:12px">(cliquez pour sélectionner)</span></label>
+        <div class="motif-grid">${motifsHtml || '<p style="color:var(--muted)">Aucun motif configuré</p>'}</div>
       </div>
       <div class="form-group">
         <label class="form-label">Commentaire</label>
-        <textarea class="form-textarea" id="justif-commentaire" rows="2"></textarea>
+        <textarea class="form-textarea" id="justif-commentaire" rows="2" placeholder="Précisez si nécessaire…"></textarea>
       </div>
+      <div id="justif-error" class="form-error hidden"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
@@ -2004,15 +2191,55 @@ function openJustifRetard(expId, numExp) {
   `);
 }
 
+function toggleMotifItem(el) {
+  el.classList.toggle("selected");
+  const cb = el.querySelector("input[type=checkbox]");
+  if (cb) cb.checked = el.classList.contains("selected");
+}
+
 async function submitJustif(expId) {
-  const motifs = [...document.querySelectorAll(".motif-item.selected input")].map(i => i.value);
-  const commentaire = document.getElementById("justif-commentaire").value;
-  if (!motifs.length) { showToast("Choisissez au moins un motif", "error"); return; }
-  await api("justifierRetard", { expId, motifRetard: motifs, commentaireRetard: commentaire, acteurEmail: currentUser.email });
-  closeModal();
-  showToast("Retard justifié — merci", "success");
-  await refreshBadgeRetard();
-  renderCurrentPage(); // reste sur justificatifs pour traiter les suivants
+  const motifs = [...document.querySelectorAll(".motif-item.selected .motif-cb")].map(i => i.value);
+  const commentaire = document.getElementById("justif-commentaire")?.value || "";
+  const errEl = document.getElementById("justif-error");
+  if (!motifs.length) {
+    if (errEl) { errEl.textContent = "Choisissez au moins un motif."; errEl.classList.remove("hidden"); }
+    else showToast("Choisissez au moins un motif", "error");
+    return;
+  }
+  try {
+    await api("justifierRetard", { expId, motifRetard: motifs, commentaireRetard: commentaire, acteurEmail: currentUser.email });
+    closeModal();
+    showToast("Retard justifié — merci", "success");
+    await refreshBadgeRetard();
+    renderCurrentPage();
+  } catch(e) {
+    if (errEl) { errEl.textContent = e.message; errEl.classList.remove("hidden"); }
+    else showToast("Erreur : " + e.message, "error");
+  }
+}
+
+function activateScan() {
+  const input = document.getElementById("t3-bl");
+  const status = document.getElementById("scan-status");
+  if (input) input.focus();
+  if (status) status.classList.remove("hidden");
+}
+
+function previewPhoto(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = document.getElementById("t3-photo-preview");
+    if (img) {
+      img.src = e.target.result;
+      img.classList.remove("hidden");
+    }
+    // Changer l'apparence de la zone
+    const zone = document.getElementById("t3-photo-zone");
+    if (zone) zone.style.background = "rgba(39,174,96,0.05)";
+  };
+  reader.readAsDataURL(file);
 }
 
 // ─── MODAL HELPERS ────────────────────────────────────────────────────────────
