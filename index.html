@@ -1991,21 +1991,53 @@ async function submitFeuVert(expId) {
 // T2 — Fin livraison parc
 function openT2(expId, numExp) {
   const now = new Date().toISOString().slice(0,16);
+  // Récupérer les infos renseignées par le commercial
+  const allExps = allCommandes.flatMap(c => c.expeditions || []);
+  const exp = allExps.find(e => e.id === expId);
+  const plaqueCommercial = exp?.plaque || "";
+  const chauffeurCommercial = exp?.chauffeur || "";
+  const telCommercial = exp?.tel || exp?.numeroChauffeur || "";
+
   openModal(`
     <div class="modal-header">
       <div class="modal-title">📦 Fin de préparation — ${numExp}</div>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div class="modal-body">
-      <div class="form-group">
-        <label class="form-label">N° Expédition validé (N° BL) *</label>
-        <input class="form-input" id="t2-bl" placeholder="EV-MC123456" oninput="autoFormat(this,'EV-MC')" style="font-family:monospace">
-        <div class="form-hint">Format : EV-MC suivi des chiffres (numéro de BL)</div>
+      ${plaqueCommercial || chauffeurCommercial ? `
+      <div class="alert alert-info" style="margin-bottom:12px;font-size:13px">
+        ℹ️ Informations renseignées par le commercial — confirmez ou corrigez
+      </div>` : `
+      <div class="alert alert-warning" style="margin-bottom:12px;font-size:13px">
+        ⚠️ Le commercial n'a pas renseigné les infos du véhicule — remplissez les champs ci-dessous
+      </div>`}
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">Plaque d'immatriculation *</label>
+          <input class="form-input" id="t2-plaque" placeholder="DK-1234-A"
+            value="${plaqueCommercial}" oninput="this.value=this.value.toUpperCase()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nom du chauffeur *</label>
+          <input class="form-input" id="t2-chauffeur" placeholder="Prénom Nom"
+            value="${chauffeurCommercial}">
+        </div>
       </div>
       <div class="form-group">
-        <label class="form-label">Heure de fin de livraison *</label>
+        <label class="form-label">N° Tel chauffeur *</label>
+        <input class="form-input" id="t2-tel" placeholder="77 000 00 00"
+          value="${telCommercial}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">N° BL (Bon de Livraison) *</label>
+        <input class="form-input" id="t2-bl" placeholder="EV-MC123456"
+          oninput="autoFormat(this,'EV-MC')" style="font-family:monospace">
+        <div class="form-hint">Format : EV-MC suivi des chiffres</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Heure de fin de préparation</label>
         <input type="datetime-local" class="form-input" id="t2-heure" value="${now}">
-        <div class="form-hint">Saisissez l'heure NAV ou laissez à maintenant</div>
+        <div class="form-hint">Laissez à maintenant ou saisissez l'heure NAV exacte</div>
       </div>
       <div id="t2-error" class="form-error hidden"></div>
     </div>
@@ -2017,15 +2049,21 @@ function openT2(expId, numExp) {
 }
 
 async function submitT2(expId) {
-  const numeroBL = document.getElementById("t2-bl").value.trim();
-  const heureT2 = document.getElementById("t2-heure").value;
-  const errEl = document.getElementById("t2-error");
+  const plaque    = document.getElementById("t2-plaque")?.value.trim() || "";
+  const chauffeur = document.getElementById("t2-chauffeur")?.value.trim() || "";
+  const tel       = document.getElementById("t2-tel")?.value.trim() || "";
+  const numeroBL  = document.getElementById("t2-bl").value.trim();
+  const heureT2   = document.getElementById("t2-heure").value;
+  const errEl     = document.getElementById("t2-error");
+
+  if (!plaque)    { errEl.textContent = "Plaque d'immatriculation obligatoire.";          errEl.classList.remove("hidden"); return; }
+  if (!chauffeur) { errEl.textContent = "Nom du chauffeur obligatoire.";                    errEl.classList.remove("hidden"); return; }
+  if (!tel)       { errEl.textContent = "N° de téléphone du chauffeur obligatoire.";        errEl.classList.remove("hidden"); return; }
   if (!numeroBL || !numeroBL.match(/^EV-MC/i)) {
-    errEl.textContent = "N° BL obligatoire (format EV-MC suivi des chiffres).";
-    errEl.classList.remove("hidden"); return;
+    errEl.textContent = "N° BL obligatoire (format EV-MC suivi des chiffres)."; errEl.classList.remove("hidden"); return;
   }
   try {
-    await api("jalon_t2", { expId, acteurEmail: currentUser.email, acteurNom: currentUser.nom, heureT2, numeroBL });
+    await api("jalon_t2", { expId, acteurEmail: currentUser.email, acteurNom: currentUser.nom, heureT2, numeroBL, plaque, chauffeur, numeroChauffeur: tel });
     closeModal();
     showToast("T2 enregistré — en attente poste de garde", "success");
     renderCurrentPage();
@@ -2034,12 +2072,20 @@ async function submitT2(expId) {
 
 // T3 — Sortie poste de garde
 function openT3(expId, numExp) {
-  // Récupérer les infos connues de l'expédition
   const allExps = allCommandes.flatMap(c => c.expeditions || []);
   const exp = allExps.find(e => e.id === expId);
-  const plaqueConnue = exp?.plaque || "";
+  const plaqueConnue   = exp?.plaque || "";
   const chauffeurConnu = exp?.chauffeur || "";
-  const blConnu = exp?.numeroBL || "";
+  const telConnu       = exp?.tel || exp?.numeroChauffeur || "";
+  const blConnu        = exp?.numeroBL || "";
+
+  // Ligne info-detail pour chaque donnée connue
+  const infoRow = (label, val) => val
+    ? `<div style="display:flex;gap:8px;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:12px;color:var(--muted);min-width:120px">${label}</span>
+        <span style="font-weight:600;font-size:14px">${val}</span>
+       </div>`
+    : ``;
 
   openModal(`
     <div class="modal-header">
@@ -2047,85 +2093,101 @@ function openT3(expId, numExp) {
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div class="modal-body">
-      ${plaqueConnue ? `
-      <div class="alert alert-info" style="margin-bottom:12px">
-        Véhicule attendu : <strong>${plaqueConnue}</strong> · Chauffeur : <strong>${chauffeurConnu || "—"}</strong>
-      </div>` : ''}
-      <div class="grid-2">
-        <div class="form-group">
-          <label class="form-label">Plaque d'immatriculation *</label>
-          <input class="form-input" id="t3-plaque" placeholder="DK-1234-A"
-            value="${plaqueConnue}"
-            oninput="this.value=this.value.toUpperCase();checkPlaqueMatch()">
-          <div id="t3-plaque-warn" class="form-hint hidden" style="color:var(--warning)">
-            ⚠️ Cette plaque diffère de celle attendue — vous pouvez la corriger
-          </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Nom du chauffeur *</label>
-          <input class="form-input" id="t3-chauffeur" placeholder="Prénom Nom" value="${chauffeurConnu}">
+
+      <div class="card" style="margin-bottom:14px;background:var(--bg)">
+        <div class="card-body" style="padding:10px 14px">
+          ${infoRow("Chauffeur", chauffeurConnu)}
+          ${infoRow("Téléphone", telConnu)}
+          ${infoRow("N° BL", blConnu)}
+          ${!plaqueConnue && !chauffeurConnu ? `<p style="color:var(--muted);font-size:13px;margin:4px 0">Aucune information renseignée</p>` : ""}
         </div>
       </div>
+
+      <div class="form-group">
+        <label class="form-label">Plaque d'immatriculation *
+          <span style="font-size:11px;color:var(--muted);font-weight:400"> — corrigez si nécessaire</span>
+        </label>
+        <input class="form-input" id="t3-plaque"
+          placeholder="DK-1234-A"
+          value="${plaqueConnue}"
+          oninput="this.value=this.value.toUpperCase();checkPlaqueMatch('${plaqueConnue}')">
+        <div id="t3-plaque-warn" class="form-hint ${plaqueConnue ? 'hidden' : ''}" style="color:var(--warning)">
+          ⚠️ Plaque non renseignée — saisissez-la
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" style="display:flex;align-items:center;gap:8px">
+          <input type="checkbox" id="t3-chauffeur-ok" style="width:16px;height:16px">
+          <span>Je confirme que le chauffeur est bien <strong>${chauffeurConnu || "(non renseigné)"}</strong></span>
+        </label>
+      </div>
+
       <div class="form-group">
         <label class="form-label">N° Bon de Livraison *</label>
         <div style="display:flex;gap:8px">
-          <input class="form-input" id="t3-bl" placeholder="${blConnu || 'EV-MC123456 ou scanner…'}"
+          <input class="form-input" id="t3-bl"
+            placeholder="EV-MC123456"
             value="${blConnu}" style="font-family:monospace">
           <button class="btn btn-outline btn-sm" onclick="activateScan()" title="Mode scan douchette">⬛ QR</button>
         </div>
-        <div id="scan-status" class="form-hint hidden" style="color:var(--success)">Mode scan actif — pointez la douchette</div>
+        <div id="scan-status" class="form-hint hidden" style="color:var(--success)">Mode scan actif</div>
       </div>
+
       <div class="form-group">
         <label class="form-label">Photo du BL *</label>
-        <div class="scan-zone" id="t3-photo-zone" onclick="document.getElementById('t3-photo-input').click()" style="cursor:pointer">
+        <div class="scan-zone" id="t3-photo-zone"
+          onclick="document.getElementById('t3-photo-input').click()" style="cursor:pointer">
           📷 Prendre une photo du BL (obligatoire)
-          <input type="file" id="t3-photo-input" accept="image/*" capture="environment" class="hidden" onchange="previewPhoto(this)">
+          <input type="file" id="t3-photo-input" accept="image/*" capture="environment"
+            class="hidden" onchange="previewPhoto(this)">
         </div>
         <img id="t3-photo-preview" class="photo-preview hidden">
       </div>
-      <div id="t3-retard-info" class="alert alert-warning hidden" style="margin-bottom:4px">
-        ⚠️ Ce véhicule sera marqué en retard. Le responsable de dépôt sera notifié pour justifier.
+
+      <div id="t3-retard-info" class="alert alert-warning hidden">
+        ⚠️ Ce véhicule sera marqué en retard — le responsable sera notifié pour justifier.
       </div>
       <div id="t3-error" class="form-error hidden"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
-      <button class="btn btn-success" onclick="submitT3('${expId}','${plaqueConnue}')">✅ Confirmer la sortie</button>
+      <button class="btn btn-success" onclick="submitT3('${expId}','${plaqueConnue}','${chauffeurConnu}')">✅ Confirmer la sortie</button>
     </div>
   `);
 
-  // Afficher le message retard si déjà > 30 min depuis T0
-  if (exp && exp.t0) {
+  if (exp?.t0) {
     const mins = Math.round((Date.now() - new Date(exp.t0)) / 60000);
-    if (mins > 30) document.getElementById("t3-retard-info").classList.remove("hidden");
+    if (mins > 30) document.getElementById("t3-retard-info")?.classList.remove("hidden");
   }
 }
 
-function checkPlaqueMatch() {
+function checkPlaqueMatch(plaqueAttendue) {
   const warnEl = document.getElementById("t3-plaque-warn");
   if (!warnEl) return;
   const plaqueInput = document.getElementById("t3-plaque").value.trim();
-  // La plaque attendue est dans le texte de l'alerte info — on la retrouve via data-attr
-  // En fait on la passe via closure — on utilise un attribute sur l'input
-  const expected = document.querySelector(".alert.alert-info strong")?.textContent || "";
-  if (expected && plaqueInput && plaqueInput !== expected) {
+  if (!plaqueInput) {
+    warnEl.textContent = "⚠️ Plaque non renseignée — saisissez-la";
+    warnEl.classList.remove("hidden");
+  } else if (plaqueAttendue && plaqueInput !== plaqueAttendue) {
+    warnEl.textContent = "⚠️ Plaque différente de celle attendue (" + plaqueAttendue + ")";
     warnEl.classList.remove("hidden");
   } else {
     warnEl.classList.add("hidden");
   }
 }
 
-async function submitT3(expId, plaqueAttendue) {
-  const plaque = document.getElementById("t3-plaque").value.trim();
-  const chauffeur = document.getElementById("t3-chauffeur").value.trim();
-  const numeroBL = document.getElementById("t3-bl").value.trim();
+async function submitT3(expId, plaqueAttendue, chauffeurAttendu) {
+  const plaque       = document.getElementById("t3-plaque").value.trim();
+  const chauffeurOk  = document.getElementById("t3-chauffeur-ok")?.checked;
+  const numeroBL     = document.getElementById("t3-bl").value.trim();
   const photoPreview = document.getElementById("t3-photo-preview");
-  const photoBlUrl = photoPreview && !photoPreview.classList.contains("hidden") ? photoPreview.src : "";
-  const errEl = document.getElementById("t3-error");
+  const photoBlUrl   = photoPreview && !photoPreview.classList.contains("hidden") ? photoPreview.src : "";
+  const errEl        = document.getElementById("t3-error");
 
-  if (!plaque) { errEl.textContent = "Plaque d'immatriculation obligatoire."; errEl.classList.remove("hidden"); return; }
-  if (!chauffeur) { errEl.textContent = "Nom du chauffeur obligatoire."; errEl.classList.remove("hidden"); return; }
-  if (!numeroBL) { errEl.textContent = "N° de Bon de Livraison obligatoire."; errEl.classList.remove("hidden"); return; }
+  if (!plaque)     { errEl.textContent = "Plaque d'immatriculation obligatoire."; errEl.classList.remove("hidden"); return; }
+  if (!chauffeurOk){ errEl.textContent = "Veuillez confirmer l'identité du chauffeur."; errEl.classList.remove("hidden"); return; }
+  if (!numeroBL)   { errEl.textContent = "N° de Bon de Livraison obligatoire."; errEl.classList.remove("hidden"); return; }
   if (!photoBlUrl) { errEl.textContent = "Photo du BL obligatoire — veuillez prendre une photo."; errEl.classList.remove("hidden"); return; }
 
   errEl.classList.add("hidden");
