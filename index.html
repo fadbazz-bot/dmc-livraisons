@@ -379,17 +379,12 @@ const SITES = ["Dakar", "Diamniadio"];
 
 // Magasins par site — avec leur email de notification
 const MAGASINS = [
-  { id:"showroom_diam",   label:"Showroom Diamniadio",              site:"Diamniadio", zone:"Showroom",             email:"comptoir.diam@dmcsen.com",           nom:"Abdoul Aziz Sall" },
-  { id:"depot_diam",     label:"Dépôt Quincaillerie Diamniadio",   site:"Diamniadio", zone:"Dépôt Quincaillerie",  email:"depot.diamniadio@dmcsen.com",        nom:"Mankeur Fall" },
-  { id:"depot_diam2",    label:"Dépôt Quincaillerie Diam (Moustapha)", site:"Diamniadio", zone:"Dépôt Quincaillerie", email:"moustapha.mare@dmcsen.com",        nom:"Moustapha Mare" },
-  { id:"parc_diam",      label:"Parc Acier Diamniadio",             site:"Diamniadio", zone:"Parc Acier",           email:"livraison.parc.diamniadio@dmcsen.com", nom:"Serigne Sall Ndiaye" },
-  { id:"depot_dakar",    label:"Dépôt Quincaillerie Dakar",         site:"Dakar",      zone:"Dépôt Quincaillerie",  email:"depot_quincaillerie_mco1@dmcsen.com", nom:"Samba Ndiaye" },
-  { id:"depot_dakar2",   label:"Dépôt Quincaillerie Dakar (Souleymane)", site:"Dakar", zone:"Dépôt Quincaillerie", email:"souleymane.diallo@dmcsen.com",        nom:"Souleymane Diallo" },
-  { id:"showroom_dakar", label:"Showroom Dakar",                    site:"Dakar",      zone:"Showroom",             email:"comptoir.dkr@dmcsen.com",            nom:"Adolphe Gomis" },
-  { id:"showroom_dakar2",label:"Showroom Dakar (Barra)",            site:"Dakar",      zone:"Showroom",             email:"agentrayon2.dkr@dmcsen.com",         nom:"Barra Diop" },
-  { id:"parc_dakar",     label:"Parc Acier Dakar",                  site:"Dakar",      zone:"Parc Acier",           email:"livraison.parc.dkr@dmcsen.com",      nom:"Sama Thioune" },
-  { id:"atelierSAV",     label:"Atelier SAV Diamniadio",            site:"Diamniadio", zone:"Dépôt",                email:"fadel.kwayes@dmcsen.com",            nom:"Fadel Kwayes" },
-  { id:"labo",           label:"Laboratoire Diamniadio",            site:"Diamniadio", zone:"Dépôt",                email:"labo@dmcsen.com",                    nom:"Mame Marie Fall" },
+  { id:"parc_dakar",      label:"Parc Dakar",         site:"Dakar",      zone:"Parc Acier",           email:"livraison.parc.dkr@dmcsen.com",        nom:"Sama Thioune" },
+  { id:"parc_diam",       label:"Parc Diamniadio",    site:"Diamniadio", zone:"Parc Acier",           email:"livraison.parc.diamniadio@dmcsen.com", nom:"Serigne Sall Ndiaye" },
+  { id:"showroom_dakar",  label:"Showroom Dakar",     site:"Dakar",      zone:"Showroom",             email:"comptoir.dkr@dmcsen.com",             nom:"Adolphe Gomis" },
+  { id:"showroom_diam",   label:"Showroom Diamniadio",site:"Diamniadio", zone:"Showroom",             email:"comptoir.diam@dmcsen.com",            nom:"Abdoul Aziz Sall" },
+  { id:"depot_dakar",     label:"Dépôt Dakar",        site:"Dakar",      zone:"Dépôt Quincaillerie",  email:"depot_quincaillerie_mco1@dmcsen.com", nom:"Samba Ndiaye" },
+  { id:"depot_diam",      label:"Dépôt Diamniadio",   site:"Diamniadio", zone:"Dépôt Quincaillerie",  email:"depot.diamniadio@dmcsen.com",         nom:"Mankeur Fall" },
 ];
 const ROLE_LABELS = {
   admin: "Administrateur", commercial: "Commercial",
@@ -545,8 +540,11 @@ async function startApp() {
     navigateTo(defaults[currentUser.role] || "file");
   }
 
-  // Rafraîchissement auto toutes les 30s
-  refreshInterval = setInterval(() => { if (currentPage) renderCurrentPage(); }, 30000);
+  // Rafraîchissement auto toutes les 30s — sauf sur les pages avec formulaires de saisie
+  refreshInterval = setInterval(() => {
+    const noRefreshPages = ["nouvelle-demande"];
+    if (currentPage && !noRefreshPages.includes(currentPage)) renderCurrentPage();
+  }, 30000);
 }
 
 let badgeRetard = 0;
@@ -617,6 +615,11 @@ function navigateTo(page) {
 }
 
 async function renderCurrentPage() {
+  // Ne pas reconstruire si un champ texte est actif (saisie en cours)
+  const active = document.activeElement;
+  const isTyping = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT');
+  if (isTyping && currentPage === 'nouvelle-demande') return;
+
   const pages = {
     "file": renderFile,
     "nouvelle-demande": renderNouvelleDemande,
@@ -1103,16 +1106,6 @@ async function renderNouvelleDemande() {
                 <input class="form-input" id="nd-nomclient" placeholder="Prénom NOM ou Société">
               </div>
             </div>
-            <div class="form-group">
-              <label class="form-label">Site de livraison *</label>
-              <div style="display:flex;gap:10px">
-                ${SITES.map(s => `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px">
-                  <input type="radio" name="nd-site-radio" value="${s}" onchange="updateMagasinsSelect()">
-                  <span>${s}</span>
-                </label>`).join("")}
-              </div>
-            </div>
-
             <div class="form-group" style="margin-top:8px">
               <label class="form-label">Expéditions *</label>
               <div id="exp-list"></div>
@@ -1139,18 +1132,7 @@ async function renderNouvelleDemande() {
 }
 
 function getMagasinsSite() {
-  const checked = document.querySelector("input[name='nd-site-radio']:checked");
-  if (!checked) return MAGASINS;
-  return MAGASINS.filter(m => m.site === checked.value);
-}
-
-function updateMagasinsSelect() {
-  // Met à jour tous les selects magasin existants selon le site choisi
-  const mags = getMagasinsSite();
-  const opts = '<option value="">Choisir le magasin…</option>' + mags.map(m => `<option value="${m.id}">${m.label}</option>`).join("");
-  document.querySelectorAll(".exp-magasin").forEach(sel => {
-    sel.innerHTML = opts;
-  });
+  return MAGASINS; // 6 magasins fixes
 }
 
 function addExpField() {
@@ -1194,18 +1176,32 @@ function removeExpField(idx) {
 }
 
 function autoFormat(input, prefix) {
-  let v = input.value.toUpperCase();
-  if (!v.startsWith(prefix)) {
-    v = prefix + v.replace(new RegExp("^" + prefix, "i"), "");
+  // Garder la position du curseur pour ne pas perturber la saisie
+  const start = input.selectionStart;
+  const end = input.selectionEnd;
+  const prev = input.value;
+  let v = prev.toUpperCase();
+
+  // Si le texte ne commence pas encore par le préfixe, forcer le préfixe
+  if (!v.startsWith(prefix.toUpperCase())) {
+    // Enlever tout préfixe partiel déjà tapé
+    const stripped = v.replace(new RegExp('^' + prefix.split('').map(c => c + '?').join(''), 'i'), '');
+    v = prefix + stripped;
   }
-  input.value = v;
+
+  // Ne modifier input.value que si nécessaire pour éviter de casser la saisie
+  if (v !== prev) {
+    input.value = v;
+    // Repositionner le curseur après le préfixe si on vient d'ajouter le préfixe
+    const newPos = Math.max(prefix.length, start + (v.length - prev.length));
+    try { input.setSelectionRange(newPos, newPos); } catch(e) {}
+  }
 }
 
 async function submitNouvelleDemande() {
   const numCmdNav = document.getElementById("nd-cmdnav").value.trim();
   const nomClient = document.getElementById("nd-nomclient").value.trim();
-  const siteRadio = document.querySelector("input[name='nd-site-radio']:checked");
-  const site = siteRadio ? siteRadio.value : "";
+  // Le site est déduit du magasin choisi
   const errEl = document.getElementById("nd-error");
 
   if (!numCmdNav || !numCmdNav.match(/^CV-MC\d+$/)) {
@@ -1216,11 +1212,6 @@ async function submitNouvelleDemande() {
     errEl.textContent = "Nom du client obligatoire.";
     errEl.classList.remove("hidden"); return;
   }
-  if (!site) {
-    errEl.textContent = "Sélectionnez un site (Dakar ou Diamniadio).";
-    errEl.classList.remove("hidden"); return;
-  }
-
   // Collecter les expéditions
   const expGroups = document.querySelectorAll(".exp-group");
   const expeditions = [];
@@ -1238,6 +1229,7 @@ async function submitNouvelleDemande() {
     expeditions.push({
       numExpedition: num,
       zone: mag ? mag.zone : "",
+      site: mag ? mag.site : "",
       magasinId: magId,
       magasinLabel: mag ? mag.label : "",
       magasinEmail: mag ? mag.email : "",
@@ -1257,10 +1249,13 @@ async function submitNouvelleDemande() {
   btn.innerHTML = '<span class="loader"></span> Envoi…';
 
   try {
+    const siteDetecte = expeditions.length > 0 && expeditions.every(e => e.site === expeditions[0].site)
+      ? expeditions[0].site
+      : expeditions.map(e => e.site).filter((v,i,a) => a.indexOf(v) === i).join(" + ");
     await api("createCommande", {
       numCmdNav,
       nomClient,
-      site,
+      site: siteDetecte,
       commercialEmail: currentUser.email,
       commercialNom: currentUser.nom,
       expeditions,
