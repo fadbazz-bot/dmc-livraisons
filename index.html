@@ -37,6 +37,18 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .login-logo-text p { font-size: 12px; color: var(--muted); }
 .login-card label { display: block; font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
 .login-card select { width: 100%; padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 14px; color: var(--text); background: white; margin-bottom: 20px; }
+/* Onglets login */
+.login-tabs { display: flex; gap: 0; margin-bottom: 24px; border: 1.5px solid var(--border); border-radius: 10px; overflow: hidden; }
+.login-tab { flex: 1; padding: 10px 8px; font-size: 13px; font-weight: 600; text-align: center; cursor: pointer; background: white; color: var(--muted); border: none; transition: background 0.2s, color 0.2s; }
+.login-tab.active { background: var(--primary); color: white; }
+.login-tab-panel { display: none; }
+.login-tab-panel.active { display: block; }
+/* Champ PIN */
+.pin-input { width: 100%; padding: 12px; border: 2px solid var(--border); border-radius: 10px; font-size: 28px; font-weight: 700; letter-spacing: 10px; text-align: center; color: var(--primary); margin-bottom: 4px; box-sizing: border-box; }
+.pin-input:focus { border-color: var(--primary); outline: none; }
+.site-btns { display: flex; gap: 10px; margin-bottom: 20px; }
+.site-btn { flex: 1; padding: 10px; border: 2px solid var(--border); border-radius: 8px; background: white; font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer; transition: all 0.2s; text-align: center; }
+.site-btn.selected { border-color: var(--primary); background: #e8f0fe; color: var(--primary); }
 .btn { display: inline-flex; align-items: center; gap: 6px; padding: 10px 18px; border-radius: 8px; font-size: 14px; font-weight: 600; border: none; cursor: pointer; transition: all 0.15s; }
 .btn-primary { background: var(--primary); color: white; width: 100%; justify-content: center; }
 .btn-primary:hover { background: var(--primary-light); }
@@ -317,14 +329,38 @@ tr:hover td { background: rgba(240,244,248,0.6); }
         <span>Gestion des expéditions</span>
       </div>
     </div>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:20px;text-align:center;">Connectez-vous avec votre compte professionnel @dmcsen.com</p>
-    <div id="google-signin-btn" style="display:flex;justify-content:center;margin-bottom:16px;"></div>
+    <!-- Onglets -->
+    <div class="login-tabs">
+      <button class="login-tab active" onclick="switchLoginTab('google')">Compte Google</button>
+      <button class="login-tab" onclick="switchLoginTab('pin')">Poste de garde</button>
+    </div>
+
+    <!-- Panneau Google -->
+    <div class="login-tab-panel active" id="tab-google">
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px;text-align:center;">Connectez-vous avec votre compte @dmcsen.com</p>
+      <div id="google-signin-btn" style="display:flex;justify-content:center;margin-bottom:16px;"></div>
+      <p style="font-size:11px;color:var(--muted);text-align:center;margin-top:4px;">Seuls les comptes @dmcsen.com autorisés sont acceptés.</p>
+    </div>
+
+    <!-- Panneau PIN poste de garde -->
+    <div class="login-tab-panel" id="tab-pin">
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px;text-align:center;">Sélectionnez votre site puis entrez le code PIN</p>
+      <div class="site-btns">
+        <button class="site-btn" id="site-btn-dakar" onclick="selectSite('Dakar')">Dakar</button>
+        <button class="site-btn" id="site-btn-diam" onclick="selectSite('Diamniadio')">Diamniadio</button>
+      </div>
+      <input class="pin-input" type="password" inputmode="numeric" maxlength="6" id="pin-input"
+             placeholder="&#8226;&#8226;&#8226;&#8226;" onkeydown="if(event.key==='Enter')doPinLogin()" />
+      <p style="font-size:11px;color:var(--muted);text-align:center;margin-bottom:14px;">Code PIN numerique</p>
+      <button class="btn btn-primary" onclick="doPinLogin()">Connexion</button>
+    </div>
+
+    <!-- Chargement commun -->
     <div id="login-loading" class="hidden" style="text-align:center;padding:12px 0;">
       <div style="display:inline-block;width:20px;height:20px;border:3px solid var(--border);border-top:3px solid var(--primary);border-radius:50%;animation:spin 0.8s linear infinite;"></div>
       <p style="font-size:13px;color:var(--muted);margin-top:8px;">Vérification en cours...</p>
     </div>
-    <p style="font-size:11px;color:var(--muted);text-align:center;margin-top:4px;">Seuls les comptes @dmcsen.com autorisés sont acceptés.</p>
-    <p class="error-msg hidden" id="login-error" style="text-align:center;">Compte introuvable. Vérifiez votre sélection.</p>
+    <p class="error-msg hidden" id="login-error" style="text-align:center;">Erreur de connexion.</p>
   </div>
 </div>
 
@@ -492,11 +528,83 @@ async function handleGoogleCredential(response) {
   }
 }
 
+// ─── ONGLETS LOGIN ────────────────────────────────────────────────────
+
+let selectedSite = null;
+
+function switchLoginTab(tab) {
+  document.querySelectorAll(".login-tab").forEach((t, i) => {
+    t.classList.toggle("active", (i === 0 && tab === 'google') || (i === 1 && tab === 'pin'));
+  });
+  document.getElementById("tab-google").classList.toggle("active", tab === 'google');
+  document.getElementById("tab-pin").classList.toggle("active", tab === 'pin');
+  document.getElementById("login-error").classList.add("hidden");
+  if (tab === 'pin') {
+    selectedSite = null;
+    document.getElementById("site-btn-dakar").classList.remove("selected");
+    document.getElementById("site-btn-diam").classList.remove("selected");
+    document.getElementById("pin-input").value = "";
+    setTimeout(() => document.getElementById("pin-input").focus(), 100);
+  }
+}
+
+function selectSite(site) {
+  selectedSite = site;
+  document.getElementById("site-btn-dakar").classList.toggle("selected", site === 'Dakar');
+  document.getElementById("site-btn-diam").classList.toggle("selected", site === 'Diamniadio');
+  document.getElementById("pin-input").focus();
+}
+
+async function doPinLogin() {
+  const errEl  = document.getElementById("login-error");
+  const loadEl = document.getElementById("login-loading");
+  const pin    = document.getElementById("pin-input").value.trim();
+
+  errEl.classList.add("hidden");
+
+  if (!selectedSite) {
+    errEl.textContent = "Veuillez sélectionner un site (Dakar ou Diamniadio).";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  if (!pin) {
+    errEl.textContent = "Veuillez entrer votre code PIN.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+
+  loadEl.classList.remove("hidden");
+  try {
+    const url = `${SCRIPT_URL}?action=pinLogin&site=${encodeURIComponent(selectedSite)}&pin=${encodeURIComponent(pin)}`;
+    const res  = await fetch(url, { redirect: "follow" });
+    const user = await res.json();
+    loadEl.classList.add("hidden");
+
+    if (user.error) {
+      errEl.textContent = user.error;
+      errEl.classList.remove("hidden");
+      document.getElementById("pin-input").value = "";
+      return;
+    }
+    currentUser = user;
+    startApp();
+  } catch(e) {
+    loadEl.classList.add("hidden");
+    errEl.textContent = "Erreur de connexion : " + e.message;
+    errEl.classList.remove("hidden");
+  }
+}
+
 function doLogout() {
+  const wasPinAuth = currentUser && currentUser.pinAuth;
   currentUser = null;
   clearInterval(refreshInterval);
   document.getElementById("app").classList.add("hidden");
   document.getElementById("login-screen").classList.remove("hidden");
+  // Revenir sur l'onglet PIN si l'agent de garde se déconnecte
+  if (wasPinAuth) {
+    switchLoginTab('pin');
+  }
   // Réinitialiser Google Sign-In
   if (typeof google !== "undefined" && google.accounts) {
     google.accounts.id.disableAutoSelect();
@@ -1668,7 +1776,7 @@ async function renderUtilisateurs() {
     const roleLabel = r => (ALL_ROLES.find(x=>x.value===r)||{}).label || r;
     document.getElementById("users-list").innerHTML = `
       <div class="table-wrap"><table>
-        <thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Site</th><th>Zone</th><th>Statut</th><th></th></tr></thead>
+        <thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Site</th><th>Zone</th><th>PIN</th><th>Statut</th><th></th></tr></thead>
         <tbody>${users.map(u => `
           <tr style="${u.actif ? '' : 'opacity:0.4'}">
             <td style="font-weight:600">${u.nom}</td>
@@ -1676,9 +1784,10 @@ async function renderUtilisateurs() {
             <td>${roleLabel(u.role)}</td>
             <td>${u.site || '—'}</td>
             <td>${u.zone || '—'}</td>
+            <td>${u.role === 'chef_poste' && u.pin ? `<span style="font-family:monospace;background:#f0f4ff;padding:2px 8px;border-radius:6px;font-size:13px;letter-spacing:2px">${u.pin}</span>` : '—'}</td>
             <td>${u.actif ? '<span style="color:var(--success)">Actif</span>' : '<span style="color:var(--danger)">Inactif</span>'}</td>
             <td style="white-space:nowrap">
-              <button class="btn btn-outline btn-sm" onclick="openEditUser('${u.id}','${u.nom.replace(/'/g,"\\'")}','${u.email}','${u.role}','${u.site||''}','${u.zone||''}',${u.actif})">Modifier</button>
+              <button class="btn btn-outline btn-sm" onclick="openEditUser('${u.id}','${u.nom.replace(/'/g,"\\'")}','${u.email}','${u.role}','${u.site||''}','${u.zone||''}',${u.actif},'${u.pin||''}')">Modifier</button>
               ${u.actif ? '<button class="btn btn-warning btn-sm" style="margin-left:4px" onclick="doDeleteUser(\''+u.id+'\')">Désactiver</button>' : '<button class="btn btn-success btn-sm" style="margin-left:4px" onclick="doReactivateUser(\''+u.id+'\')">Réactiver</button>'}
               <button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="doHardDeleteUser('${u.id}','${u.nom.replace(/'/g,String.fromCharCode(39))}')" title="Suppression définitive">🗑</button>
             </td>
@@ -1749,10 +1858,17 @@ async function submitAddUser() {
   } catch(e) { errEl.textContent=e.message; errEl.classList.remove("hidden"); }
 }
 
-function openEditUser(id, nom, email, role, site, zone, actif) {
+function openEditUser(id, nom, email, role, site, zone, actif, pin) {
   const rolesOpts = ALL_ROLES.map(r => `<option value="${r.value}" ${r.value===role?'selected':''}>${r.label}</option>`).join("");
   const sitesOpts = SITES.map(s => `<option value="${s}" ${s===site?'selected':''}>${s}</option>`).join("");
   const zonesOpts = ZONES.map(z => `<option value="${z}" ${z===zone?'selected':''}>${z}</option>`).join("");
+  const pinField = role === 'chef_poste' ? `
+    <div class="form-group">
+      <label class="form-label">Code PIN (poste de garde)</label>
+      <input class="form-input" id="edit-pin" type="number" inputmode="numeric" maxlength="6"
+             placeholder="Ex: 1234" value="${pin||''}" style="font-size:20px;letter-spacing:6px;font-weight:700;">
+      <p style="font-size:11px;color:var(--muted);margin-top:4px;">Laisser vide pour ne pas modifier le PIN existant.</p>
+    </div>` : '';
   openModal(`
     <div class="modal-header">
       <div class="modal-title">Modifier — ${nom}</div>
@@ -1767,7 +1883,9 @@ function openEditUser(id, nom, email, role, site, zone, actif) {
       <div class="grid-2">
         <div class="form-group">
           <label class="form-label">Rôle</label>
-          <select class="form-select" id="edit-role">${rolesOpts}</select>
+          <select class="form-select" id="edit-role" onchange="togglePinField(this.value,'${pin||''}')">
+            ${rolesOpts}
+          </select>
         </div>
         <div class="form-group">
           <label class="form-label">Site</label>
@@ -1778,6 +1896,7 @@ function openEditUser(id, nom, email, role, site, zone, actif) {
         <label class="form-label">Zone</label>
         <select class="form-select" id="edit-zone"><option value="">—</option>${zonesOpts}</select>
       </div>
+      <div id="pin-field-wrapper">${pinField}</div>
       <div id="edit-error" class="form-error hidden"></div>
     </div>
     <div class="modal-footer">
@@ -1787,13 +1906,33 @@ function openEditUser(id, nom, email, role, site, zone, actif) {
   `);
 }
 
+function togglePinField(role, currentPin) {
+  const wrapper = document.getElementById("pin-field-wrapper");
+  if (!wrapper) return;
+  if (role === 'chef_poste') {
+    wrapper.innerHTML = `
+      <div class="form-group">
+        <label class="form-label">Code PIN (poste de garde)</label>
+        <input class="form-input" id="edit-pin" type="number" inputmode="numeric" maxlength="6"
+               placeholder="Ex: 1234" value="${currentPin||''}" style="font-size:20px;letter-spacing:6px;font-weight:700;">
+        <p style="font-size:11px;color:var(--muted);margin-top:4px;">Laisser vide pour ne pas modifier le PIN existant.</p>
+      </div>`;
+  } else {
+    wrapper.innerHTML = '';
+  }
+}
+
 async function submitEditUser(id) {
-  const nom = document.getElementById("edit-nom").value.trim();
+  const nom  = document.getElementById("edit-nom").value.trim();
   const role = document.getElementById("edit-role").value;
   const site = document.getElementById("edit-site").value;
   const zone = document.getElementById("edit-zone").value;
+  const pinEl = document.getElementById("edit-pin");
+  const pin  = pinEl ? pinEl.value.trim() : undefined;
+  const payload = { id, nom, role, site, zone };
+  if (pin) payload.pin = pin;
   try {
-    await api("updateUser", { id, nom, role, site, zone });
+    await api("updateUser", payload);
     closeModal();
     showToast("Utilisateur modifié", "success");
     renderUtilisateurs();
