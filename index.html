@@ -837,7 +837,7 @@ function updateBulkBar() {
   if ((role === "commercial" || role === "admin") && sel.every(e => e.t0 && !e.t1 && e.statut === "en_attente")) {
     btn.textContent = "✅ Feu vert groupé";
   } else if ((role === "responsable" || role === "admin") && sel.every(e => e.t1 && !e.t2)) {
-    btn.textContent = "📦 Fin de livraison parc groupée";
+    btn.textContent = "✅ Fin de livraison groupée";
   } else if ((role === "chef_poste" || role === "admin") && sel.every(e => e.t2 && !e.t3)) {
     btn.textContent = "🚗 Valider sortie groupée";
   } else {
@@ -1039,7 +1039,7 @@ function openBulkT3(exps, nums) {
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
-      <button class="btn btn-success" onclick="submitBulkT3()">✅ Confirmer la sortie</button>
+      <button class="btn btn-success" onclick="submitBulkT3()">✅ Enregistrer fin de livraison</button>
     </div>
   `);
 }
@@ -1182,7 +1182,7 @@ function renderExpActions(exp, cmd) {
   }
   // Chef poste : T3
   if ((role === "chef_poste" || role === "admin") && exp.t2 && !exp.t3) {
-    actions.push(`<button class="btn btn-primary btn-sm" onclick="openT3('${exp.id}','${exp.numExpedition}')">🚗 Valider sortie</button>`);
+    actions.push(`<button class="btn btn-primary btn-sm" onclick="openT3('${exp.id}','${exp.numExpedition}')">✅ Enregistrer fin de livraison</button>`);
   }
   // Responsable : justifier retard (si sortie sans motif et retard)
   if ((role === "responsable" || role === "admin") && exp.t3 && !exp.motifRetard) {
@@ -1259,29 +1259,39 @@ function addExpField() {
   div.id = `exp-group-${idx}`;
   const mags = getMagasinsSite();
   const optsM = '<option value="">Choisir le magasin…</option>' + mags.map(m => `<option value="${m.id}">${m.label}</option>`).join("");
+  const isCopy = arguments[0] === "copy";
+  const copyBtn = idx > 0 ? `
+    <button class="btn btn-outline btn-sm" onclick="copyChauffeur(${idx})"
+      title="Copier le chauffeur/véhicule de la 1ère expédition"
+      style="white-space:nowrap">
+      ↳ Même chauffeur
+    </button>` : "";
   div.innerHTML = `
     <div class="exp-row" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;padding:12px;background:var(--bg);border-radius:8px;border:1px solid var(--border)">
-      <div class="form-group" style="flex:0 0 160px">
+      <div class="form-group" style="flex:0 0 155px">
         <label class="form-label">N° Expédition *</label>
         <input class="form-input exp-num" placeholder="EX-2504664" oninput="autoFormat(this,'EX-')">
       </div>
-      <div class="form-group" style="flex:1;min-width:200px">
+      <div class="form-group" style="flex:1;min-width:190px">
         <label class="form-label">Magasin de livraison *</label>
         <select class="form-select exp-magasin">${optsM}</select>
       </div>
-      <div class="form-group" style="flex:1;min-width:180px">
-        <label class="form-label">N° Tel chauffeur <span>(optionnel)</span></label>
-        <input class="form-input exp-tel" placeholder="77 000 00 00">
-      </div>
-      <div class="form-group" style="flex:0 0 160px">
-        <label class="form-label">Nom chauffeur <span>(opt.)</span></label>
-        <input class="form-input exp-chauffeur" placeholder="Prénom Nom">
-      </div>
-      <div class="form-group" style="flex:0 0 140px">
+      <div class="form-group" style="flex:0 0 155px">
         <label class="form-label">Immatriculation <span>(opt.)</span></label>
         <input class="form-input exp-plaque" placeholder="DK-1234-A" oninput="this.value=this.value.toUpperCase()">
       </div>
-      ${idx > 0 ? `<button class="btn btn-danger btn-sm" onclick="removeExpField(${idx})" style="margin-bottom:0;flex-shrink:0">✕</button>` : ""}
+      <div class="form-group" style="flex:0 0 155px">
+        <label class="form-label">Nom chauffeur <span>(opt.)</span></label>
+        <input class="form-input exp-chauffeur" placeholder="Prénom Nom">
+      </div>
+      <div class="form-group" style="flex:1;min-width:150px">
+        <label class="form-label">N° Tel chauffeur <span>(opt.)</span></label>
+        <input class="form-input exp-tel" placeholder="77 000 00 00">
+      </div>
+      <div style="display:flex;gap:6px;align-items:flex-end;margin-bottom:0;flex-shrink:0">
+        ${idx > 0 ? copyBtn : ""}
+        ${idx > 0 ? `<button class="btn btn-danger btn-sm" onclick="removeExpField(${idx})">✕</button>` : ""}
+      </div>
     </div>
   `;
   list.appendChild(div);
@@ -1289,6 +1299,24 @@ function addExpField() {
 
 function removeExpField(idx) {
   document.getElementById(`exp-group-${idx}`)?.remove();
+}
+
+function copyChauffeur(idx) {
+  // Copie plaque/chauffeur/tel de la première expédition vers celle avec idx
+  const groups = document.querySelectorAll(".exp-group");
+  if (groups.length < 2) return;
+  const src  = groups[0];
+  const dest = document.getElementById(`exp-group-${idx}`);
+  if (!dest) return;
+  const srcPlaque    = src.querySelector(".exp-plaque")?.value || "";
+  const srcChauffeur = src.querySelector(".exp-chauffeur")?.value || "";
+  const srcTel       = src.querySelector(".exp-tel")?.value || "";
+  if (dest.querySelector(".exp-plaque"))    dest.querySelector(".exp-plaque").value    = srcPlaque;
+  if (dest.querySelector(".exp-chauffeur")) dest.querySelector(".exp-chauffeur").value = srcChauffeur;
+  if (dest.querySelector(".exp-tel"))       dest.querySelector(".exp-tel").value       = srcTel;
+  // Feedback visuel
+  const btn = dest.querySelector("button[onclick*=copyChauffeur]");
+  if (btn) { btn.textContent = "✅ Copié"; setTimeout(() => btn.textContent = "↳ Même chauffeur", 1500); }
 }
 
 function autoFormat(input, prefix) {
@@ -1425,7 +1453,7 @@ async function renderResponsable() {
           ${renderJalonTrack(exp)}
           <div style="display:flex;gap:8px;margin-top:10px">
             <button class="btn btn-warning btn-sm" onclick="openT2('${exp.id}','${exp.numExpedition}')">
-              📦 Enregistrer fin de livraison parc
+              ✅ Enregistrer fin de livraison
             </button>
           </div>
         </div>
@@ -2112,14 +2140,15 @@ function openFeuVert(expId, numExp) {
       </div>
       <div id="fv-error" class="form-error hidden"></div>
     </div>
-    <div class="modal-footer">
+    <div class="modal-footer" style="gap:8px">
       <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
-      <button class="btn btn-success" onclick="submitFeuVert('${expId}')">✅ Confirmer le feu vert</button>
+      <button class="btn btn-warning" onclick="submitFeuVert('${expId}','probleme')">⚠️ Problème chauffeur</button>
+      <button class="btn btn-success" onclick="submitFeuVert('${expId}','ok')">✅ Confirmer le feu vert</button>
     </div>
   `);
 }
 
-async function submitFeuVert(expId) {
+async function submitFeuVert(expId, statut) {
   const plaque = document.getElementById("fv-plaque")?.value.trim() || "";
   const chauffeur = document.getElementById("fv-chauffeur")?.value.trim() || "";
   const tel = document.getElementById("fv-tel")?.value.trim() || "";
@@ -2128,9 +2157,13 @@ async function submitFeuVert(expId) {
   if (!chauffeur) { errEl.textContent = "Nom du chauffeur obligatoire."; errEl.classList.remove("hidden"); return; }
   if (!tel) { errEl.textContent = "N° de téléphone chauffeur obligatoire."; errEl.classList.remove("hidden"); return; }
   try {
-    await api("feuVert", { expId, acteurEmail: currentUser.email, acteurNom: currentUser.nom, plaque, chauffeur, numeroChauffeur: tel });
+    await api("feuVert", { expId, acteurEmail: currentUser.email, acteurNom: currentUser.nom, plaque, chauffeur, numeroChauffeur: tel, validationChauffeur: statut });
     closeModal();
-    showToast("Feu vert accordé — notification envoyée", "success");
+    if (statut === "probleme") {
+      showToast("Problème signalé — feu vert accordé avec réserve", "warning");
+    } else {
+      showToast("Feu vert accordé — notification envoyée", "success");
+    }
     renderCurrentPage();
   } catch(e) { showToast("Erreur : " + e.message, "error"); }
 }
@@ -2264,10 +2297,26 @@ function openT3(expId, numExp) {
       </div>
 
       <div class="form-group">
-        <label class="form-label" style="display:flex;align-items:center;gap:8px">
-          <input type="checkbox" id="t3-chauffeur-ok" style="width:16px;height:16px">
-          <span>Je confirme que le chauffeur est bien <strong>${chauffeurConnu || "(non renseigné)"}</strong></span>
-        </label>
+        <label class="form-label">Vérification du chauffeur</label>
+        <div style="display:flex;gap:8px;align-items:center;padding:10px 12px;background:var(--bg);border-radius:8px;border:1px solid var(--border);margin-bottom:6px">
+          <span style="flex:1;font-size:14px;font-weight:600">${chauffeurConnu || "<em style=\"color:var(--muted)\">Non renseigné</em>"}</span>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-sm" id="t3-chauf-ok-btn"
+            onclick="toggleT3Chauffeur('ok')"
+            style="flex:1;background:#D1FAE5;color:#065F46;border:none;font-weight:600">
+            ✅ Chauffeur confirmé
+          </button>
+          <button class="btn btn-sm" id="t3-chauf-pb-btn"
+            onclick="toggleT3Chauffeur('probleme')"
+            style="flex:1;background:#FEF3C7;color:#92400E;border:none;font-weight:600">
+            ⚠️ Problème / Différent
+          </button>
+        </div>
+        <input type="hidden" id="t3-chauffeur-statut" value="">
+        <div id="t3-chauffeur-correction" class="hidden" style="margin-top:8px">
+          <input class="form-input" id="t3-chauffeur-new" placeholder="Nom du chauffeur réel" style="margin-bottom:0">
+        </div>
       </div>
 
       <div class="form-group">
@@ -2302,7 +2351,7 @@ function openT3(expId, numExp) {
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
-      <button class="btn btn-success" onclick="submitT3('${expId}','${plaqueConnue}','${chauffeurConnu}')">✅ Confirmer la sortie</button>
+      <button class="btn btn-success" onclick="submitT3('${expId}','${plaqueConnue}','${chauffeurConnu}')">✅ Enregistrer fin de livraison</button>
     </div>
   `);
 
@@ -2327,17 +2376,35 @@ function checkPlaqueMatch(plaqueAttendue) {
   }
 }
 
+function toggleT3Chauffeur(statut) {
+  document.getElementById("t3-chauffeur-statut").value = statut;
+  const okBtn = document.getElementById("t3-chauf-ok-btn");
+  const pbBtn = document.getElementById("t3-chauf-pb-btn");
+  const corrDiv = document.getElementById("t3-chauffeur-correction");
+  if (statut === "ok") {
+    okBtn.style.outline = "2px solid #065F46";
+    pbBtn.style.outline = "none";
+    corrDiv.classList.add("hidden");
+  } else {
+    pbBtn.style.outline = "2px solid #92400E";
+    okBtn.style.outline = "none";
+    corrDiv.classList.remove("hidden");
+    document.getElementById("t3-chauffeur-new")?.focus();
+  }
+}
+
 async function submitT3(expId, plaqueAttendue, chauffeurAttendu) {
   const plaque       = document.getElementById("t3-plaque").value.trim();
-  const chauffeurOk  = document.getElementById("t3-chauffeur-ok")?.checked;
   const blNum        = document.getElementById("t3-bl-num").value.trim();
   const numeroBL     = blNum ? "EV-MC" + blNum : "";
   const photoPreview = document.getElementById("t3-photo-preview");
   const photoBlUrl   = photoPreview && !photoPreview.classList.contains("hidden") ? photoPreview.src : "";
   const errEl        = document.getElementById("t3-error");
 
-  if (!plaque)     { errEl.textContent = "Plaque d'immatriculation obligatoire."; errEl.classList.remove("hidden"); return; }
-  if (!chauffeurOk){ errEl.textContent = "Veuillez confirmer l'identité du chauffeur."; errEl.classList.remove("hidden"); return; }
+  const chauffeurStatut = document.getElementById("t3-chauffeur-statut")?.value || "";
+  const chauffeurNew    = document.getElementById("t3-chauffeur-new")?.value.trim() || "";
+  if (!plaque)          { errEl.textContent = "Plaque d'immatriculation obligatoire."; errEl.classList.remove("hidden"); return; }
+  if (!chauffeurStatut) { errEl.textContent = "Veuillez confirmer ou signaler un problème sur le chauffeur."; errEl.classList.remove("hidden"); return; }
   if (!numeroBL)   { errEl.textContent = "N° de Bon de Livraison obligatoire."; errEl.classList.remove("hidden"); return; }
   // Photo optionnelle — plus de validation obligatoire
 
@@ -2349,10 +2416,12 @@ async function submitT3(expId, plaqueAttendue, chauffeurAttendu) {
       acteurEmail: currentUser.email,
       acteurNom: currentUser.nom,
       plaque,
-      chauffeur,
+      chauffeur: chauffeurNew || chauffeurAttendu,
       numeroBL,
       plaqueAttendue,
       photoBlUrl: photoBlUrl.startsWith("data:") ? photoBlUrl : "",
+      validationChauffeur: chauffeurStatut,
+      commentaireChauffeur: chauffeurStatut === "probleme" && chauffeurNew ? "Chauffeur corrigé : " + chauffeurNew : "",
     });
     closeModal();
     const msg = result.enRetard
