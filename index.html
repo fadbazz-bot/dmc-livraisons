@@ -1026,7 +1026,14 @@ function openBulkT3(exps, nums) {
       </div>
       <div class="form-group">
         <label class="form-label">N° Bon de Livraison *</label>
-        <input class="form-input" id="bulk-t3-bl" placeholder="BL-2504664" style="font-family:monospace">
+        <div style="display:flex;align-items:center;gap:0;border:1.5px solid var(--border);border-radius:8px;overflow:hidden;">
+          <span style="background:#f0f4ff;padding:10px 12px;font-family:monospace;font-size:14px;font-weight:700;color:var(--primary);border-right:1.5px solid var(--border);white-space:nowrap;">EV-MC</span>
+          <input id="bulk-t3-bl-num" type="text" inputmode="numeric"
+            style="flex:1;border:none;outline:none;padding:10px 12px;font-family:monospace;font-size:14px;"
+            placeholder="123456"
+            oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Saisissez uniquement le numéro après EV-MC</div>
       </div>
       <div id="bulk-t3-error" class="form-error hidden"></div>
     </div>
@@ -1040,7 +1047,8 @@ function openBulkT3(exps, nums) {
 async function submitBulkT3() {
   const plaque = document.getElementById("bulk-t3-plaque").value.trim();
   const chauffeur = document.getElementById("bulk-t3-chauffeur").value.trim();
-  const numeroBL = document.getElementById("bulk-t3-bl").value.trim();
+  const blNum = document.getElementById("bulk-t3-bl-num").value.trim();
+  const numeroBL = blNum ? "EV-MC" + blNum : "";
   const errEl = document.getElementById("bulk-t3-error");
   if (!plaque) { errEl.textContent = "Plaque obligatoire."; errEl.classList.remove("hidden"); return; }
   if (!numeroBL) { errEl.textContent = "N° BL obligatoire."; errEl.classList.remove("hidden"); return; }
@@ -2264,20 +2272,23 @@ function openT3(expId, numExp) {
 
       <div class="form-group">
         <label class="form-label">N° Bon de Livraison *</label>
-        <div style="display:flex;gap:8px">
-          <input class="form-input" id="t3-bl"
-            placeholder="EV-MC123456"
-            value="${blConnu}" style="font-family:monospace">
-          <button class="btn btn-outline btn-sm" onclick="activateScan()" title="Mode scan douchette">⬛ QR</button>
+        <div style="display:flex;align-items:center;gap:0;border:1.5px solid var(--border);border-radius:8px;overflow:hidden;">
+          <span style="background:#f0f4ff;padding:10px 12px;font-family:monospace;font-size:14px;font-weight:700;color:var(--primary);border-right:1.5px solid var(--border);white-space:nowrap;">EV-MC</span>
+          <input id="t3-bl-num" type="text" inputmode="numeric"
+            style="flex:1;border:none;outline:none;padding:10px 12px;font-family:monospace;font-size:14px;"
+            placeholder="123456"
+            value="${blConnu.replace(/^EV-MC/i,'')}"
+            oninput="this.value=this.value.replace(/[^0-9]/g,'')">
         </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Saisissez uniquement le numéro après EV-MC (ex: 123456)</div>
         <div id="scan-status" class="form-hint hidden" style="color:var(--success)">Mode scan actif</div>
       </div>
 
       <div class="form-group">
-        <label class="form-label">Photo du BL *</label>
+        <label class="form-label">Photo du BL <span style="font-size:11px;color:var(--muted);font-weight:400">(optionnelle)</span></label>
         <div class="scan-zone" id="t3-photo-zone"
           onclick="document.getElementById('t3-photo-input').click()" style="cursor:pointer">
-          📷 Prendre une photo du BL (obligatoire)
+          📷 Prendre une photo du BL
           <input type="file" id="t3-photo-input" accept="image/*" capture="environment"
             class="hidden" onchange="previewPhoto(this)">
         </div>
@@ -2319,7 +2330,8 @@ function checkPlaqueMatch(plaqueAttendue) {
 async function submitT3(expId, plaqueAttendue, chauffeurAttendu) {
   const plaque       = document.getElementById("t3-plaque").value.trim();
   const chauffeurOk  = document.getElementById("t3-chauffeur-ok")?.checked;
-  const numeroBL     = document.getElementById("t3-bl").value.trim();
+  const blNum        = document.getElementById("t3-bl-num").value.trim();
+  const numeroBL     = blNum ? "EV-MC" + blNum : "";
   const photoPreview = document.getElementById("t3-photo-preview");
   const photoBlUrl   = photoPreview && !photoPreview.classList.contains("hidden") ? photoPreview.src : "";
   const errEl        = document.getElementById("t3-error");
@@ -2327,7 +2339,7 @@ async function submitT3(expId, plaqueAttendue, chauffeurAttendu) {
   if (!plaque)     { errEl.textContent = "Plaque d'immatriculation obligatoire."; errEl.classList.remove("hidden"); return; }
   if (!chauffeurOk){ errEl.textContent = "Veuillez confirmer l'identité du chauffeur."; errEl.classList.remove("hidden"); return; }
   if (!numeroBL)   { errEl.textContent = "N° de Bon de Livraison obligatoire."; errEl.classList.remove("hidden"); return; }
-  if (!photoBlUrl) { errEl.textContent = "Photo du BL obligatoire — veuillez prendre une photo."; errEl.classList.remove("hidden"); return; }
+  // Photo optionnelle — plus de validation obligatoire
 
   errEl.classList.add("hidden");
 
