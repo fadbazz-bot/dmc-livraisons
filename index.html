@@ -401,6 +401,17 @@ tr:hover td { background: rgba(240,244,248,0.6); }
 
 <script>
 // ─── CONFIG ─────────────────────────────────────────────────────────────────
+
+// Étiquette lisible d'une expédition : N° Commande | Client | Magasin
+function expLabel(exp, cmdsMap) {
+  const cmd = (cmdsMap && exp.cmdId) ? cmdsMap[exp.cmdId] : null;
+  // Priorité : données directement sur exp (vues responsable/poste) > cmdsMap > fallback
+  const num  = exp.numCmdNav || (cmd && cmd.numCmdNav) || (cmd && cmd.id) || exp.cmdId || "";
+  const cli  = exp.nomClient  || (cmd && cmd.nomClient) || "";
+  const mag  = exp.magasinLabel || exp.zone || "";
+  return [num, cli, mag].filter(Boolean).join(" | ");
+}
+
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxJ7zAiWOGniCg1dSDRfwEtO8oJifKIMNSaLfPtsoU4C-XT-hJehAc3g-Jx37pWWSyc/exec"; // ← À remplacer après déploiement
 
 const ZONES = ["Showroom", "Parc Acier", "Dépôt Quincaillerie", "Parc", "Dépôt"];
@@ -769,7 +780,7 @@ async function renderFile() {
     <div style="padding:0 24px 12px;background:var(--card);border-bottom:1px solid var(--border)">
       <div class="search-bar" style="max-width:380px">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.099zm-5.242 1.656a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11z"/></svg>
-        <input class="form-input" id="search-exp" placeholder="Rechercher N° EX, commande, zone…" oninput="filterFile()" style="font-size:13px">
+        <input class="form-input" id="search-exp" placeholder="Rechercher N° commande, client, magasin…" oninput="filterFile()" style="font-size:13px">
       </div>
     </div>
     <div class="page-content" style="padding-bottom:80px">
@@ -795,6 +806,8 @@ async function renderFile() {
     window._lastFiltZone = filtZone;
 
     allCommandes = await api("getCommandes", params);
+    // Index commandes pour expLabel()
+    window.cmdsMap = Object.fromEntries(allCommandes.map(c => [c.id, c]));
     const total = allCommandes.reduce((a,c) => a + (c.expeditions?.length||0), 0);
     document.getElementById("file-subtitle").textContent = `${total} expédition(s) · ${allCommandes.length} commande(s)`;
 
@@ -888,7 +901,7 @@ function openBulkAction() {
   const sel = [...selectedExpIds].map(id => allExps.find(e => e.id === id)).filter(Boolean);
   if (!sel.length) return;
   const role = currentUser.role;
-  const nums = sel.map(e => e.numExpedition).join(", ");
+  const nums = sel.map(e => expLabel(e, cmdsMap)).join(", ");
 
   if ((role === "commercial" || role === "admin") && sel.every(e => e.t0 && !e.t1 && e.statut === "en_attente")) {
     openBulkFeuVert(sel, nums);
@@ -1114,7 +1127,7 @@ function renderExpRow(exp, cmd) {
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div style="display:flex;align-items:center;gap:8px">
           ${canSelectExp(exp) ? `<input type="checkbox" class="exp-checkbox" onclick="event.stopPropagation();toggleExpSelection('${exp.id}',this.closest('.exp-selectable'))">` : ''}
-          <span style="font-weight:700;font-family:monospace;font-size:14px">${exp.numExpedition}</span>
+          <span style="font-weight:700;font-family:monospace;font-size:14px">${expLabel(exp, cmdsMap)}</span>
           <span style="font-size:12px;color:var(--muted)">${exp.zone}</span>
           ${exp.statut !== "sortie" && duree !== null ? `<span class="duree-pill ${dureeClass}">${fmtDuree(duree)}</span>` : ""}
           ${dureeT03 !== null ? `<span class="duree-pill ${dureeClass}">✓ ${fmtDuree(dureeT03)}</span>` : ""}
@@ -1174,21 +1187,21 @@ function renderExpActions(exp, cmd) {
 
   // Commercial : feu vert T1
   if ((role === "commercial" || role === "admin") && exp.t0 && !exp.t1 && exp.statut === "en_attente") {
-    actions.push(`<button class="btn btn-success btn-sm" onclick="openFeuVert('${exp.id}','${exp.numExpedition}')">✅ Donner le feu vert</button>`);
+    actions.push(`<button class="btn btn-success btn-sm" onclick="openFeuVert('${exp.id}',expLabel(exp,cmdsMap))">✅ Donner le feu vert</button>`);
   }
   // Responsable : T2
   if ((role === "responsable" || role === "admin") && exp.t1 && !exp.t2) {
-    actions.push(`<button class="btn btn-warning btn-sm" onclick="openT2('${exp.id}','${exp.numExpedition}')">📦 Fin de livraison parc</button>`);
+    actions.push(`<button class="btn btn-warning btn-sm" onclick="openT2('${exp.id}',expLabel(exp,cmdsMap))">📦 Fin de livraison</button>`);
   }
   // Chef poste : T3
   if ((role === "chef_poste" || role === "admin") && exp.t2 && !exp.t3) {
-    actions.push(`<button class="btn btn-primary btn-sm" onclick="openT3('${exp.id}','${exp.numExpedition}')">✅ Enregistrer fin de livraison</button>`);
+    actions.push(`<button class="btn btn-primary btn-sm" onclick="openT3('${exp.id}',expLabel(exp,cmdsMap))">✅ Enregistrer fin de livraison</button>`);
   }
   // Responsable : justifier retard (si sortie sans motif et retard)
   if ((role === "responsable" || role === "admin") && exp.t3 && !exp.motifRetard) {
     const dureeT03 = exp.t0 && exp.t3 ? Math.round((new Date(exp.t3) - new Date(exp.t0)) / 60000) : 0;
     if (dureeT03 > 30) {
-      actions.push(`<button class="btn btn-danger btn-sm" onclick="openJustifRetard('${exp.id}','${exp.numExpedition}')">⚠️ Justifier retard</button>`);
+      actions.push(`<button class="btn btn-danger btn-sm" onclick="openJustifRetard('${exp.id}',expLabel(exp,cmdsMap))">⚠️ Justifier retard</button>`);
     }
   }
 
@@ -1268,10 +1281,7 @@ function addExpField() {
     </button>` : "";
   div.innerHTML = `
     <div class="exp-row" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;padding:12px;background:var(--bg);border-radius:8px;border:1px solid var(--border)">
-      <div class="form-group" style="flex:0 0 155px">
-        <label class="form-label">N° Expédition *</label>
-        <input class="form-input exp-num" placeholder="EX-2504664" oninput="autoFormat(this,'EX-')">
-      </div>
+
       <div class="form-group" style="flex:1;min-width:190px">
         <label class="form-label">Magasin de livraison *</label>
         <select class="form-select exp-magasin">${optsM}</select>
@@ -1362,16 +1372,14 @@ async function submitNouvelleDemande() {
   let valid = true;
 
   expGroups.forEach(g => {
-    const num = g.querySelector(".exp-num").value.trim();
     const magId = g.querySelector(".exp-magasin").value;
     const tel = g.querySelector(".exp-tel")?.value.trim() || "";
     const chauffeur = g.querySelector(".exp-chauffeur")?.value.trim() || "";
     const plaque = g.querySelector(".exp-plaque")?.value.trim() || "";
-    if (!num || !magId) { valid = false; return; }
-    if (!num.match(/^EX-\d+$/)) { valid = false; return; }
+    if (!magId) { valid = false; return; }
     const mag = MAGASINS.find(m => m.id === magId);
     expeditions.push({
-      numExpedition: num,
+      numExpedition: "",  // généré côté serveur
       zone: mag ? mag.zone : "",
       site: mag ? mag.site : "",
       magasinId: magId,
@@ -1383,7 +1391,7 @@ async function submitNouvelleDemande() {
   });
 
   if (!valid || !expeditions.length) {
-    errEl.textContent = "Vérifiez les N° d'expédition (format EX-XXXXX) et les magasins.";
+    errEl.textContent = "Veuillez sélectionner un magasin pour chaque expédition.";
     errEl.classList.remove("hidden"); return;
   }
 
@@ -1434,6 +1442,9 @@ async function renderResponsable() {
     const params = { statut: "feu_vert" };
     if (currentUser.zone) params.zone = currentUser.zone;
     const all = await api("getExpeditions", params);
+    // cmdsMap pour expLabel (construit depuis les exp qui portent numCmdNav)
+    window.cmdsMap = window.cmdsMap || {};
+    all.forEach(e => { if (e.cmdId && e.numCmdNav) window.cmdsMap[e.cmdId] = { id: e.cmdId, numCmdNav: e.numCmdNav, nomClient: e.nomClient || "" }; });
 
     if (!all.length) {
       document.getElementById("resp-list").innerHTML = `<div class="empty">${iconWrench()}<p>Aucune expédition avec feu vert</p></div>`;
@@ -1445,14 +1456,14 @@ async function renderResponsable() {
         <div class="card-body">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
             <div>
-              <span style="font-weight:700;font-family:monospace;font-size:15px">${exp.numExpedition}</span>
+              <span style="font-weight:700;font-family:monospace;font-size:14px">${expLabel(exp, cmdsMap)}</span>
               <span style="color:var(--muted);margin-left:8px;font-size:13px">${exp.zone}</span>
             </div>
             ${renderBadge(exp.statut)}
           </div>
           ${renderJalonTrack(exp)}
           <div style="display:flex;gap:8px;margin-top:10px">
-            <button class="btn btn-warning btn-sm" onclick="openT2('${exp.id}','${exp.numExpedition}')">
+            <button class="btn btn-warning btn-sm" onclick="openT2('${exp.id}',expLabel(exp,cmdsMap))">
               ✅ Enregistrer fin de livraison
             </button>
           </div>
@@ -1482,6 +1493,8 @@ async function renderPosteGarde() {
 
   try {
     const exps = await api("getExpeditions", { statut: "prete" });
+    window.cmdsMap = window.cmdsMap || {};
+    exps.forEach(e => { if (e.cmdId && e.numCmdNav) window.cmdsMap[e.cmdId] = { id: e.cmdId, numCmdNav: e.numCmdNav, nomClient: e.nomClient || "" }; });
     if (!exps.length) {
       document.getElementById("garde-list").innerHTML = `<div class="empty">${iconShield()}<p>Aucune expédition prête à sortir</p></div>`;
       return;
@@ -1494,7 +1507,7 @@ async function renderPosteGarde() {
           <div class="card-body">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
               <div>
-                <span style="font-weight:700;font-family:monospace;font-size:15px">${exp.numExpedition}</span>
+                <span style="font-weight:700;font-family:monospace;font-size:14px">${expLabel(exp, cmdsMap)}</span>
                 <span style="color:var(--muted);margin-left:8px;font-size:13px">${exp.zone}</span>
                 ${enRetard ? `<span class="duree-pill duree-bad" style="margin-left:8px">${fmtDuree(duree)}</span>` : ""}
               </div>
@@ -1502,7 +1515,7 @@ async function renderPosteGarde() {
             </div>
             ${renderJalonTrack(exp)}
             <div style="margin-top:10px">
-              <button class="btn btn-success btn-sm" onclick="openT3('${exp.id}','${exp.numExpedition}')">
+              <button class="btn btn-success btn-sm" onclick="openT3('${exp.id}',expLabel(exp,cmdsMap))">
                 🚗 Valider la sortie du véhicule
               </button>
             </div>
@@ -1538,14 +1551,15 @@ async function renderJustificatifs() {
   try {
     let data;
     if (isControleur) {
-      // Le contrôleur voit les retards justifiés (par le responsable) mais pas encore validés par lui
       const site = currentUser.site || "";
       data = await api("getRetardsAValider", site ? { site } : {});
     } else {
-      // Le responsable voit les retards à justifier
       const zone = currentUser.zone || "";
       data = isAdmin ? await api("getRetardsAJustifier") : await api("getRetardsAJustifier", zone ? { zone } : {});
     }
+    // cmdsMap pour expLabel
+    window.cmdsMap = window.cmdsMap || {};
+    data.forEach(e => { if (e.cmdId && e.numCmdNav) window.cmdsMap[e.cmdId] = { id: e.cmdId, numCmdNav: e.numCmdNav, nomClient: e.nomClient || "" }; });
 
     // Mettre à jour le badge
     badgeRetard = data.length || 0;
@@ -1576,12 +1590,12 @@ async function renderJustificatifs() {
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn btn-success btn-sm" onclick="doValiderJustif('${exp.id}')">✅ Valider</button>
-            <button class="btn btn-danger btn-sm" onclick="openContredire('${exp.id}','${exp.numExpedition}')">❌ Contredire</button>
+            <button class="btn btn-danger btn-sm" onclick="openContredire('${exp.id}',expLabel(exp,cmdsMap))">❌ Contredire</button>
           </div>
         `;
       } else {
         // Responsable : justifier
-        actionHtml = '<button class="btn btn-warning" onclick="openJustifRetard(\''+exp.id+'\',\''+exp.numExpedition+'\')">✍️ Justifier ce retard</button>';
+        actionHtml = `<button class="btn btn-warning" onclick="openJustifRetard('${exp.id}',expLabel(exp,cmdsMap))">✍️ Justifier ce retard</button>`;
       }
 
       return `
@@ -1589,7 +1603,7 @@ async function renderJustificatifs() {
           <div class="card-body">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
               <div>
-                <span style="font-weight:700;font-family:monospace;font-size:15px;color:var(--primary)">${exp.numExpedition}</span>
+                <span style="font-weight:700;font-family:monospace;font-size:14px;color:var(--primary)">${expLabel(exp, cmdsMap)}</span>
                 <span style="background:var(--danger);color:white;font-size:11px;font-weight:700;border-radius:4px;padding:2px 7px;margin-left:8px">🔴 ${duree} min</span>
               </div>
               <span style="font-size:12px;color:var(--muted)">Sorti le ${heureT3}</span>
