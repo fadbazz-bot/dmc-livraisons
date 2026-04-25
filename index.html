@@ -1472,14 +1472,7 @@ async function submitNouvelleDemande() {
     const siteDetecte = expeditions.length > 0 && expeditions.every(e => e.site === expeditions[0].site)
       ? expeditions[0].site
       : expeditions.map(e => e.site).filter((v,i,a) => a.indexOf(v) === i).join(" + ");
-    // Sauvegarder les tel/chauffeur/plaque par clé (numCmdNav+magasin) pour pré-remplir le feu vert
-    expeditions.forEach(exp => {
-      if (exp.tel || exp.chauffeur || exp.plaque) {
-        const key = `chauffeur_t0_${numCmdNav}_${exp.magasinId}`;
-        localStorage.setItem(key, JSON.stringify({ tel: exp.tel, chauffeur: exp.chauffeur, plaque: exp.plaque }));
-      }
-    });
-    await api("createCommande", {
+    const result = await api("createCommande", {
       numCmdNav,
       nomClient,
       site: siteDetecte,
@@ -1487,6 +1480,15 @@ async function submitNouvelleDemande() {
       commercialNom: currentUser.nom,
       expeditions,
     });
+    // Sauvegarder le tel par expId pour pré-remplir le feu vert
+    if (result && result.expeditions) {
+      result.expeditions.forEach((exp, i) => {
+        const telSaisi = expeditions[i]?.tel || "";
+        if (telSaisi && exp.id) {
+          localStorage.setItem(`tel_chauffeur_${exp.id}`, telSaisi);
+        }
+      });
+    }
     showToast("Instruction envoyée — les responsables ont été notifiés", "success");
     navigateTo("file");
   } catch(e) {
@@ -2249,17 +2251,11 @@ function openFeuVert(expId, numExp) {
   // Pré-remplir si déjà renseigné (depuis la création)
   const allExps = allCommandes.flatMap(c => c.expeditions || []);
   const exp = allExps.find(e => e.id === expId);
-  // Récupérer depuis localStorage si les données T0 sont disponibles
-  const numCmdNavExp = exp?.numCmdNav || "";
-  // magasinId : chercher par label (zone) si pas directement disponible
-  const magasinId = exp?.magasin || exp?.magasinId ||
-    (MAGASINS.find(m => m.label === exp?.zone || m.label === exp?.magasinLabel)?.id) || "";
-  const localKey = numCmdNavExp && magasinId ? `chauffeur_t0_${numCmdNavExp}_${magasinId}` : null;
-  const localData = localKey ? JSON.parse(localStorage.getItem(localKey) || "null") : null;
-
-  const plaqueVal = exp?.plaque || localData?.plaque || "";
-  const chauffeurVal = exp?.chauffeur || localData?.chauffeur || "";
-  const telVal = exp?.numeroChauffeur || exp?.tel || localData?.tel || "";
+  // Tel : depuis le Sheet (col TEL_CHAUFFEUR) ou localStorage (sauvegardé à T0 par expId)
+  const telLocal = localStorage.getItem(`tel_chauffeur_${expId}`) || "";
+  const plaqueVal = exp?.plaque || "";
+  const chauffeurVal = exp?.chauffeur || "";
+  const telVal = exp?.numeroChauffeur || telLocal;
 
   openModal(`
     <div class="modal-header">
