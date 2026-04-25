@@ -530,6 +530,8 @@ async function handleGoogleCredential(response) {
       return;
     }
     currentUser = user;
+    // Désactiver l'overlay GIS (One Tap) qui bloquerait les clics une fois connecté
+    try { google.accounts.id.cancel(); } catch(e) {}
     startApp();
   } catch(e) {
     loadingEl.classList.add("hidden");
@@ -628,6 +630,8 @@ function showErr(id) { document.getElementById(id).classList.remove("hidden"); }
 
 // ─── APP INIT ────────────────────────────────────────────────────────────────
 async function startApp() {
+  // S'assurer que l'overlay GIS est désactivé pour ne pas bloquer les clics dans l'app
+  try { if (typeof google !== "undefined" && google.accounts) google.accounts.id.cancel(); } catch(e) {}
   document.getElementById("login-screen").classList.add("hidden");
   document.getElementById("app").classList.remove("hidden");
   document.getElementById("login-error").classList.add("hidden");
