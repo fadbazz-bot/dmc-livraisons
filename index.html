@@ -1255,21 +1255,21 @@ function renderExpActions(exp, cmd) {
 
   // Commercial : feu vert T1
   if ((role === "commercial" || role === "admin") && exp.t0 && !exp.t1 && exp.statut === "en_attente") {
-    actions.push(`<button class="btn btn-success btn-sm" onclick="event.stopPropagation();openFeuVert('${exp.id}',expLabel(exp,cmdsMap))">✅ Donner le feu vert</button>`);
+    actions.push(`<button class="btn btn-success btn-sm" onclick="event.stopPropagation();openFeuVertById('${exp.id}')">✅ Donner le feu vert</button>`);
   }
   // Responsable : T2
   if ((role === "responsable" || role === "admin") && exp.t1 && !exp.t2) {
-    actions.push(`<button class="btn btn-warning btn-sm" onclick="event.stopPropagation();openT2('${exp.id}',expLabel(exp,cmdsMap))">📦 Fin de livraison</button>`);
+    actions.push(`<button class="btn btn-warning btn-sm" onclick="event.stopPropagation();openT2ById('${exp.id}')">📦 Fin de livraison</button>`);
   }
   // Chef poste : T3
   if ((role === "chef_poste" || role === "admin") && exp.t2 && !exp.t3) {
-    actions.push(`<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openT3('${exp.id}',expLabel(exp,cmdsMap))">✅ Enregistrer fin de livraison</button>`);
+    actions.push(`<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openT3ById('${exp.id}')">✅ Enregistrer fin de livraison</button>`);
   }
   // Responsable : justifier retard (si sortie sans motif et retard)
   if ((role === "responsable" || role === "admin") && exp.t3 && !exp.motifRetard) {
     const dureeT03 = exp.t0 && exp.t3 ? Math.round((new Date(exp.t3) - new Date(exp.t0)) / 60000) : 0;
     if (dureeT03 > 30) {
-      actions.push(`<button class="btn btn-danger btn-sm" onclick="event.stopPropagation();openJustifRetard('${exp.id}',expLabel(exp,cmdsMap))">⚠️ Justifier retard</button>`);
+      actions.push(`<button class="btn btn-danger btn-sm" onclick="event.stopPropagation();openJustifRetardById('${exp.id}')">⚠️ Justifier retard</button>`);
     }
   }
 
@@ -1542,7 +1542,7 @@ async function renderResponsable() {
           </div>
           ${renderJalonTrack(exp)}
           <div style="display:flex;gap:8px;margin-top:10px">
-            <button class="btn btn-warning btn-sm" onclick="openT2('${exp.id}',expLabel(exp,cmdsMap))">
+            <button class="btn btn-warning btn-sm" onclick="event.stopPropagation();openT2ById('${exp.id}')">
               ✅ Enregistrer fin de livraison
             </button>
           </div>
@@ -1605,7 +1605,7 @@ async function renderPosteGarde() {
             </div>
             ${renderJalonTrack(exp)}
             <div style="margin-top:10px">
-              <button class="btn btn-success btn-sm" onclick="openT3('${exp.id}',expLabel(exp,cmdsMap))">
+              <button class="btn btn-success btn-sm" onclick="event.stopPropagation();openT3ById('${exp.id}')">
                 🚗 Valider la sortie du véhicule
               </button>
             </div>
@@ -2224,6 +2224,20 @@ async function desactiverMotif(id) {
 // ─── MODALS ────────────────────────────────────────────────────────────────────
 
 // Feu vert (T1) — infos véhicule obligatoires
+// Wrappers appelés depuis les onclick inline (expLabel ne peut pas être évalué dans un onclick HTML)
+function _resolveExp(expId) {
+  const allExps = allCommandes.flatMap(c => c.expeditions || []);
+  return allExps.find(e => e.id === expId);
+}
+function _expLabelById(expId) {
+  const exp = _resolveExp(expId);
+  return exp ? expLabel(exp, window.cmdsMap || {}) : expId;
+}
+function openFeuVertById(expId) { openFeuVert(expId, _expLabelById(expId)); }
+function openT2ById(expId) { openT2(expId, _expLabelById(expId)); }
+function openT3ById(expId) { openT3(expId, _expLabelById(expId)); }
+function openJustifRetardById(expId) { openJustifRetard(expId, _expLabelById(expId)); }
+
 function openFeuVert(expId, numExp) {
   // Pré-remplir si déjà renseigné (depuis la création)
   const allExps = allCommandes.flatMap(c => c.expeditions || []);
