@@ -734,10 +734,14 @@ function navigateTo(page) {
 }
 
 async function renderCurrentPage() {
+  // Ne pas reconstruire si une modale est ouverte
+  const modalOpen = document.getElementById("modal-container")?.children.length > 0;
+  if (modalOpen) return;
+
   // Ne pas reconstruire si un champ texte est actif (saisie en cours)
   const active = document.activeElement;
   const isTyping = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT');
-  if (isTyping && currentPage === 'nouvelle-demande') return;
+  if (isTyping) return; // ne pas reconstruire si l'utilisateur est en train de saisir
 
   const pages = {
     "file": renderFile,
