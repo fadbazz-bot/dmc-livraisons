@@ -20,23 +20,32 @@ export const commandes = sqliteTable("commandes", {
   commercialNom: text("commercial_nom").notNull(),
   commercialEmail: text("commercial_email"),
   responsableNom: text("responsable_nom"),           // Responsable préparation/livraison
-  chefPosteNom: text("chef_poste_nom"),
+  chefPosteNom: text("chef_poste_nom"),              // Gardien au portail
 
-  // Jalons horodatés (ISO strings)
-  t0: text("t0"),   // Demande créée (commercial)
-  t1: text("t1"),   // Début préparation (responsable)
-  t2: text("t2"),   // Fin préparation / prête (responsable)
-  t4: text("t4"),   // Sortie poste de garde / remise client
-
-  // Statut global
-  statut: text("statut").notNull().default("en_attente"),
-  // 'en_attente' | 'en_preparation' | 'prete' | 'partie' | 'annulee'
-
-  // Données sortie (poste de garde)
-  plaqueImmatriculation: text("plaque_immatriculation"),
+  // Informations Chauffeur (Facultatives pour le commercial)
+  telephoneChauffeur: text("telephone_chauffeur"),
   nomChauffeur: text("nom_chauffeur"),
+  plaqueImmatriculation: text("plaque_immatriculation"),
+
+  // NOUVEAU : Sécurité & Anti-Triche
+  codeRetrait: text("code_retrait"),                 // PIN 4 chiffres généré automatiquement
+  photoChargementUrl: text("photo_chargement_url"),  // Preuve visuelle du chargement
   numeroBL: text("numero_bl"),
-  photoBlUrl: text("photo_bl_url"),   // URL/base64 du scan BL
+  photoBlUrl: text("photo_bl_url"),                  // (Gardé pour le scan du papier si besoin)
+
+  // NOUVEAU : Jalons horodatés (ISO strings)
+  t0: text("t0"),                             // Demande créée (commercial)
+  tEntreeSite: text("t_entree_site"),         // Clic du Garde au portail (Début temps total)
+  tArriveeGuichet: text("t_arrivee_guichet"), // Saisie du Code PIN par responsable (Démarre les 30 min)
+  t1: text("t1"),                             // Début préparation (responsable)
+  t2: text("t2"),                             // Fin préparation (responsable)
+  tChargementFini: text("t_chargement_fini"), // Photo du chargement (Arrête les 30 min)
+  tSortieSite: text("t_sortie_site"),         // Clic du Garde pour départ (Fin temps total)
+  t4: text("t4"),                             // (Ancien jalon gardé par sécurité pour la rétrocompatibilité)
+
+  // Statut global (Mis à jour avec le nouveau flux)
+  statut: text("statut").notNull().default("en_attente"),
+  // 'en_attente' | 'sur_site' | 'au_guichet' | 'en_preparation' | 'prete' | 'livree' | 'annulee'
 
   // KPI & retard
   motifRetard: text("motif_retard"),         // JSON array stringifié
@@ -50,19 +59,24 @@ export const commandes = sqliteTable("commandes", {
   createdAt: text("created_at").notNull(),
 });
 
+// Zod Schema pour la création (Ce que le commercial peut envoyer)
 export const insertCommandeSchema = createInsertSchema(commandes).omit({
   id: true,
+  // On masque tous les jalons et la sécurité à la création
+  tEntreeSite: true,
+  tArriveeGuichet: true,
   t1: true,
   t2: true,
+  tChargementFini: true,
+  tSortieSite: true,
   t4: true,
+  codeRetrait: true,
+  photoChargementUrl: true,
   responsableNom: true,
   chefPosteNom: true,
   statut: true,
   exclureKpi: true,
   createdAt: true,
-  plaqueImmatriculation: true,
-  nomChauffeur: true,
-  numeroBL: true,
   photoBlUrl: true,
 });
 
@@ -73,7 +87,8 @@ export type Commande = typeof commandes.$inferSelect;
 export const evenements = sqliteTable("evenements", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   commandeId: integer("commande_id").notNull(),
-  jalon: text("jalon").notNull(), // 'T0' | 'T1' | 'T2' | 'T4'
+  // Mis à jour avec les nouveaux jalons
+  jalon: text("jalon").notNull(), // 'T0' | 'ENTREE_SITE' | 'ARRIVEE_GUICHET' | 'T1' | 'T2' | 'CHARGEMENT_FINI' | 'SORTIE_SITE'
   acteurNom: text("acteur_nom").notNull(),
   acteurRole: text("acteur_role").notNull(),
   timestamp: text("timestamp").notNull(),
