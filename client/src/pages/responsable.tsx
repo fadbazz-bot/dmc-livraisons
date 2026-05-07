@@ -5,18 +5,16 @@ import { StatutBadge } from "@/components/statut-badge";
 import { JalonTimeline } from "@/components/jalon-timeline";
 import { formatDateTime, formatDuree, dureeMinutes, ZONE_OPTIONS } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
-import { Loader2, Wrench, CheckCircle2, Clock, RefreshCw, AlertCircle, Timer } from "lucide-react";
+import { Loader2, Wrench, CheckCircle2, Clock, RefreshCw, KeyRound, Camera, Truck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-
-// Anti-triche : délai minimum en secondes entre T1 et T2
-const MIN_PREP_SECONDS = 120; // 2 minutes
 
 export default function ResponsablePage() {
   const { user } = useAuth();
@@ -24,61 +22,73 @@ export default function ResponsablePage() {
   const qc = useQueryClient();
   const [filtreZone, setFiltreZone] = useState(user?.zoneLivraison || "all");
   const [loadingId, setLoadingId] = useState<number | null>(null);
-  const [now, setNow] = useState(() => Date.now());
 
-  // Rafraîchit le "now" toutes les 10s pour mise à jour des timers
-  useState(() => {
-    const interval = setInterval(() => setNow(Date.now()), 10000);
-    return () => clearInterval(interval);
-  });
+  // États pour les modales anti-triche
+  const [pinDialogCmd, setPinDialogCmd] = useState<Commande | null>(null);
+  const [pinValue, setPinValue] = useState("");
+  
+  const [photoDialogCmd, setPhotoDialogCmd] = useState<Commande | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: commandes = [], isLoading, refetch } = useQuery<Commande[]>({
     queryKey: ["/api/commandes"],
     queryFn: () => apiRequest("GET", "/api/commandes").then((r) => r.json()),
-    refetchInterval: 20000,
+    refetchInterval: 15000,
   });
 
-  // Commandes pour le responsable : en attente ou en préparation
+  // On affiche tout le flux pour le responsable : de l'attente jusqu'au chargement
   const visibles = commandes.filter((c) => {
-    if (!["en_attente", "en_preparation"].includes(c.statut)) return false;
+    const statutsVisibles = ["en_attente", "sur_site", "au_guichet", "en_preparation", "prete"];
+    if (!statutsVisibles.includes(c.statut)) return false;
     if (filtreZone && filtreZone !== "all" && c.zoneLivraison !== filtreZone) return false;
     return true;
   });
 
-  const jalonnement = useMutation({
-    mutationFn: ({ id, jalon }: { id: number; jalon: "t1" | "t2" }) =>
-      apiRequest("POST", `/api/commandes/${id}/jalon/${jalon}`, {
+  const validerJalon = useMutation({
+    mutationFn: async ({ id, jalon, extraData }: { id: number; jalon: string; extraData?: any }) => {
+      const res = await apiRequest("POST", `/api/commandes/${id}/jalon/${jalon}`, {
         acteurNom: user!.nom,
         acteurRole: user!.role,
-      }).then((r) => r.json()),
+        ...extraData
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Erreur de validation");
+      }
+      return res.json();
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/commandes"] });
-      toast({ title: "Jalon enregistré", description: "La progression a été mise à jour." });
+      toast({ title: "Opération validée", description: "La progression a été mise à jour." });
       setLoadingId(null);
+      setPinDialogCmd(null);
+      setPhotoDialogCmd(null);
+      setPhotoPreview(null);
+      setPinValue("");
     },
-    onError: () => {
-      toast({ title: "Erreur", description: "Impossible de mettre à jour le jalon.", variant: "destructive" });
+    onError: (err: any) => {
+      toast({ title: "Erreur", description: err.message, variant: "destructive" });
       setLoadingId(null);
     },
   });
 
-  const handleJalon = (id: number, jalon: "t1" | "t2") => {
+  // Actions directes (sans modale)
+  const handleJalonSimple = (id: number, jalon: string) => {
     setLoadingId(id);
-    jalonnement.mutate({ id, jalon });
+    validerJalon.mutate({ id, jalon });
   };
 
-  // Calcul du temps restant avant de pouvoir valider T2 (anti-triche)
-  const getSecondsUntilT2Allowed = (cmd: Commande): number => {
-    if (!cmd.t1) return 0;
-    const elapsed = (Date.now() - new Date(cmd.t1).getTime()) / 1000;
-    return Math.max(0, MIN_PREP_SECONDS - elapsed);
-  };
-
-  const formatCountdown = (secs: number): string => {
-    const m = Math.floor(secs / 60);
-    const s = Math.floor(secs % 60);
-    return `${m}:${s.toString().padStart(2, "0")}`;
-  };
+  // Capture de l'appareil photo
+  const handlePhotoCapture = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setPhotoPreview(ev.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  }, []);
 
   return (
     <div className="h-full flex flex-col">
@@ -90,82 +100,50 @@ export default function ResponsablePage() {
             </div>
             <div>
               <h1 className="text-lg font-semibold">Préparation & Livraison</h1>
-              <p className="text-sm text-muted-foreground">
-                {visibles.length} commande{visibles.length > 1 ? "s" : ""} à traiter
-                {user?.zoneLivraison && (
-                  <span className="ml-2 text-sky-600 dark:text-sky-400 font-medium">· {user.zoneLivraison}</span>
-                )}
-              </p>
+              <p className="text-sm text-muted-foreground">{visibles.length} commande(s) en cours</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <Select value={filtreZone} onValueChange={setFiltreZone}>
-              <SelectTrigger className="w-[200px]" data-testid="select-zone-resp">
-                <SelectValue placeholder="Toutes les zones" />
-              </SelectTrigger>
+              <SelectTrigger className="w-[200px]"><SelectValue placeholder="Toutes les zones" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Toutes les zones</SelectItem>
                 {ZONE_OPTIONS.map((z) => <SelectItem key={z} value={z}>{z}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Button variant="outline" size="sm" onClick={() => refetch()}>
-              <RefreshCw className="h-4 w-4 mr-1.5" />
-              Actualiser
-            </Button>
+            <Button variant="outline" size="sm" onClick={() => refetch()}><RefreshCw className="h-4 w-4 mr-1.5" />Actualiser</Button>
           </div>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
         {isLoading ? (
-          Array.from({ length: 3 }).map((_, i) => (
-            <Card key={i}><CardContent className="p-5"><Skeleton className="h-28 w-full" /></CardContent></Card>
-          ))
+          <Card><CardContent className="p-5"><Skeleton className="h-28 w-full" /></CardContent></Card>
         ) : visibles.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <CheckCircle2 className="h-10 w-10 text-emerald-400 mb-3" />
-            <p className="font-medium text-foreground">Aucune commande à préparer</p>
-            <p className="text-sm text-muted-foreground mt-1">Toutes les commandes sont traitées ou filtrées</p>
+            <p className="font-medium">Aucune commande à gérer</p>
           </div>
         ) : (
           visibles
-            .sort((a, b) => {
-              if (a.priorite === "aujourd_hui" && b.priorite !== "aujourd_hui") return -1;
-              if (b.priorite === "aujourd_hui" && a.priorite !== "aujourd_hui") return 1;
-              return new Date(a.t0!).getTime() - new Date(b.t0!).getTime();
-            })
+            .sort((a, b) => new Date(a.t0!).getTime() - new Date(b.t0!).getTime())
             .map((cmd) => {
               const attente = dureeMinutes(cmd.t0, new Date().toISOString());
               const enRetard = attente !== null && attente > 30;
-              const isLoadingThis = loadingId === cmd.id;
-              const secsLeft = getSecondsUntilT2Allowed(cmd);
-              const t2Blocked = cmd.statut === "en_preparation" && secsLeft > 0;
+              const isLoadingThis = loadingId === cmd.id || validerJalon.isPending;
 
               return (
-                <Card
-                  key={cmd.id}
-                  className={cn("border", enRetard && "border-orange-300 dark:border-orange-800")}
-                  data-testid={`card-resp-${cmd.id}`}
-                >
+                <Card key={cmd.id} className={cn("border", enRetard && "border-orange-300")}>
                   <CardHeader className="pb-2 pt-4 px-5">
                     <div className="flex items-start justify-between">
                       <div>
-                        <div className="flex items-center gap-2">
-                          <CardTitle className="text-sm font-semibold font-mono">{cmd.numExpedition}</CardTitle>
-                          {cmd.numCommandeNav && (
-                            <span className="text-xs text-muted-foreground font-mono">{cmd.numCommandeNav}</span>
-                          )}
-                        </div>
+                        <CardTitle className="text-sm font-semibold font-mono">{cmd.numExpedition}</CardTitle>
                         <p className="text-sm text-muted-foreground mt-0.5">
-                          {cmd.client} · <span className="font-medium text-foreground">{cmd.zoneLivraison}</span> · {cmd.typeCommande}
+                          {cmd.client} · <span className="font-medium text-foreground">{cmd.zoneLivraison}</span>
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
-                        {enRetard && (
-                          <span className="text-xs text-orange-500 font-medium flex items-center gap-1">
-                            <Clock className="h-3.5 w-3.5" />{formatDuree(attente)} d'attente
-                          </span>
-                        )}
+                        {enRetard && <span className="text-xs text-orange-500 flex items-center"><Clock className="h-3.5 w-3.5 mr-1" />{formatDuree(attente)}</span>}
                         <StatutBadge statut={cmd.statut} />
                       </div>
                     </div>
@@ -173,60 +151,38 @@ export default function ResponsablePage() {
                   <CardContent className="px-5 pb-5 space-y-4">
                     <JalonTimeline commande={cmd} />
 
-                    {cmd.commentaireCommercial && (
-                      <div className="bg-muted/50 rounded-md p-3 text-sm text-muted-foreground italic">
-                        "{cmd.commentaireCommercial}"
-                      </div>
-                    )}
-
-                    {/* Anti-triche : avertissement si T2 bloqué */}
-                    {t2Blocked && (
-                      <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md px-3 py-2">
-                        <Timer className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                        <p className="text-xs text-amber-700 dark:text-amber-300">
-                          Délai minimum de préparation non atteint. Fin dans{" "}
-                          <span className="font-semibold font-mono">{formatCountdown(secsLeft)}</span>
-                        </p>
-                      </div>
-                    )}
-
-                    <div className="flex items-center gap-2 pt-1">
-                      {cmd.statut === "en_attente" && (
-                        <Button
-                          size="sm"
-                          onClick={() => handleJalon(cmd.id, "t1")}
-                          disabled={isLoadingThis}
-                          data-testid={`button-t1-${cmd.id}`}
-                          className="bg-sky-600 hover:bg-sky-700"
-                        >
-                          {isLoadingThis ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Wrench className="h-4 w-4 mr-1.5" />}
-                          Début de préparation
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      {/* BOUTON 1 : Saisie du PIN (Démarre les 30 min) */}
+                      {(cmd.statut === "en_attente" || cmd.statut === "sur_site") && (
+                        <Button size="sm" onClick={() => setPinDialogCmd(cmd)} disabled={isLoadingThis} className="bg-indigo-600 hover:bg-indigo-700 w-full sm:w-auto">
+                          <KeyRound className="h-4 w-4 mr-1.5" />
+                          Chauffeur au guichet (Saisir Code)
                         </Button>
                       )}
+
+                      {/* BOUTON 2 : Démarrage Préparation */}
+                      {cmd.statut === "au_guichet" && (
+                        <Button size="sm" onClick={() => handleJalonSimple(cmd.id, "t1")} disabled={isLoadingThis} className="bg-sky-600 hover:bg-sky-700 w-full sm:w-auto">
+                          <Wrench className="h-4 w-4 mr-1.5" />
+                          Démarrer préparation
+                        </Button>
+                      )}
+
+                      {/* BOUTON 3 : Fin de Préparation */}
                       {cmd.statut === "en_preparation" && (
-                        <Button
-                          size="sm"
-                          onClick={() => handleJalon(cmd.id, "t2")}
-                          disabled={isLoadingThis || t2Blocked}
-                          data-testid={`button-t2-${cmd.id}`}
-                          className={cn(
-                            "transition-colors",
-                            t2Blocked
-                              ? "bg-muted text-muted-foreground cursor-not-allowed"
-                              : "bg-emerald-600 hover:bg-emerald-700"
-                          )}
-                          title={t2Blocked ? "Délai minimum de préparation non atteint" : undefined}
-                        >
-                          {isLoadingThis
-                            ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
-                            : t2Blocked
-                              ? <AlertCircle className="h-4 w-4 mr-1.5" />
-                              : <CheckCircle2 className="h-4 w-4 mr-1.5" />
-                          }
-                          {t2Blocked ? `Fin de préparation (${formatCountdown(secsLeft)})` : "Fin de préparation"}
+                        <Button size="sm" onClick={() => handleJalonSimple(cmd.id, "t2")} disabled={isLoadingThis} className="bg-emerald-600 hover:bg-emerald-700 w-full sm:w-auto">
+                          <CheckCircle2 className="h-4 w-4 mr-1.5" />
+                          Marchandise prête
                         </Button>
                       )}
-                      <span className="text-xs text-muted-foreground ml-1">Créée {formatDateTime(cmd.t0)}</span>
+
+                      {/* BOUTON 4 : Validation Chargement (Photo) */}
+                      {cmd.statut === "prete" && (
+                        <Button size="sm" onClick={() => setPhotoDialogCmd(cmd)} disabled={isLoadingThis} className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto">
+                          <Camera className="h-4 w-4 mr-1.5" />
+                          Prendre en photo le chargement
+                        </Button>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -234,6 +190,83 @@ export default function ResponsablePage() {
             })
         )}
       </div>
+
+      {/* --- MODALE 1 : SAISIE DU CODE PIN (ARRIVÉE GUICHET) --- */}
+      <Dialog open={!!pinDialogCmd} onOpenChange={(o) => !o && setPinDialogCmd(null)}>
+        <DialogContent className="max-w-sm text-center">
+          <DialogHeader>
+            <DialogTitle className="flex justify-center mb-2"><KeyRound className="h-10 w-10 text-indigo-500" /></DialogTitle>
+            <DialogTitle>Validation Présence Chauffeur</DialogTitle>
+            <DialogDescription>
+              Demandez au chauffeur son code à 4 chiffres. Cette action déclenche le chronomètre de préparation de 30 minutes.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Input 
+              type="text" 
+              maxLength={4}
+              placeholder="Ex: 4821" 
+              value={pinValue} 
+              onChange={(e) => setPinValue(e.target.value.replace(/[^0-9]/g, ''))}
+              className="text-center text-3xl font-mono tracking-[0.5em] h-16 w-3/4 mx-auto"
+              autoFocus
+            />
+          </div>
+          <DialogFooter className="sm:justify-center">
+            <Button variant="outline" onClick={() => setPinDialogCmd(null)}>Annuler</Button>
+            <Button 
+              disabled={pinValue.length !== 4 || validerJalon.isPending} 
+              onClick={() => validerJalon.mutate({ id: pinDialogCmd!.id, jalon: "tArriveeGuichet", extraData: { codeRetraitSaisi: pinValue } })}
+              className="bg-indigo-600 hover:bg-indigo-700"
+            >
+              {validerJalon.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Valider & Démarrer le chrono
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- MODALE 2 : PHOTO DU CHARGEMENT --- */}
+      <Dialog open={!!photoDialogCmd} onOpenChange={(o) => !o && setPhotoDialogCmd(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Truck className="h-5 w-5 text-blue-600" /> Validation du chargement</DialogTitle>
+            <DialogDescription>
+              Prenez en photo la marchandise dans le véhicule du client pour clore votre temps de préparation.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="flex flex-col items-center justify-center py-4 space-y-4">
+            {!photoPreview ? (
+              <Button onClick={() => fileInputRef.current?.click()} className="h-24 w-full border-dashed bg-muted/50 text-muted-foreground hover:bg-muted" variant="outline">
+                <Camera className="h-8 w-8 mr-3" />
+                Ouvrir l'appareil photo
+              </Button>
+            ) : (
+              <div className="relative w-full">
+                <img src={photoPreview} alt="Chargement" className="w-full max-h-64 object-cover rounded-md border" />
+                <Button variant="secondary" size="sm" className="absolute top-2 right-2" onClick={() => fileInputRef.current?.click()}>
+                  Reprendre la photo
+                </Button>
+              </div>
+            )}
+            {/* L'attribut capture="environment" force l'ouverture de l'appareil photo arrière sur mobile */}
+            <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoCapture} />
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPhotoDialogCmd(null)}>Annuler</Button>
+            <Button 
+              disabled={!photoPreview || validerJalon.isPending} 
+              onClick={() => validerJalon.mutate({ id: photoDialogCmd!.id, jalon: "tChargementFini", extraData: { photoChargementUrl: photoPreview } })}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {validerJalon.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Valider le chargement
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
