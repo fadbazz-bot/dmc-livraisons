@@ -13,6 +13,7 @@ export default defineConfig({
     },
   },
   root: "client",
+  envDir: path.resolve(__dirname),
   build: {
     outDir: "../dist",
     emptyOutDir: true,
