@@ -12,16 +12,40 @@ import { formatRelative } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
 /**
+ * Catégorise une zone (libellé complet type "Parc Diamniadio" ou catégorie
+ * abstraite type "Parc Acier") en l'une des 4 catégories magasin. Permet de
+ * comparer la zone d'une expédition (toujours le libellé complet avec site,
+ * ex: "Parc Diamniadio") à la zone du compte responsable (catégorie abstraite
+ * seule, ex: "Parc Acier") — ces deux chaînes ne se recoupent jamais en tant
+ * que sous-chaînes littérales, d'où le bug historique : seul Showroom
+ * fonctionnait, car "Showroom" apparaît mot pour mot dans les deux.
+ */
+function zoneCategorie(zone: string): "parc" | "depot" | "showroom" | "sav" | "autre" {
+  const z = zone.toLowerCase();
+  if (z.includes("parc")) return "parc";
+  if (z.includes("dépôt") || z.includes("depot")) return "depot";
+  if (z.includes("showroom")) return "showroom";
+  if (z.includes("sav")) return "sav";
+  return "autre";
+}
+
+/** Site déduit du libellé de zone (ex: "Parc Diamniadio" → "Diamniadio") */
+function zoneToSite(zone: string): "Dakar" | "Diamniadio" {
+  return zone.toLowerCase().includes("diamniadio") ? "Diamniadio" : "Dakar";
+}
+
+/**
  * Page Responsable Magasin — flux v3.
  * Action UNIQUE : saisir le code PIN remis par le client → chargement enclenché.
  *
  * Filtrage : les expéditions affichées sont celles avec un statut "entree_site"
- * (camion sur site, en attente du code). Le filtre par zone (magasin du
- * responsable) s'applique automatiquement si user.zone est défini.
+ * (camion sur site, en attente du code), filtrées par catégorie de magasin
+ * ET par site du responsable (voir zoneCategorie / zoneToSite ci-dessus).
  */
 export default function ResponsablePage() {
   const { user } = useAuth();
   const myZone = user?.zone || "";
+  const myCategorie = myZone ? zoneCategorie(myZone) : null;
   const [activeExp, setActiveExp] = useState<Expedition | null>(null);
 
   const { data: exps = [], isLoading, refetch, isFetching, error } = useQuery({
@@ -38,13 +62,14 @@ export default function ResponsablePage() {
   // Camions sur site, en attente que le client présente son code
   const aTraiter = useMemo(() => {
     let list = exps.filter((e) => e.statut === "entree_site");
-    if (myZone) {
-      list = list.filter((e) =>
-        String(e.zone || "").toLowerCase().includes(String(myZone).toLowerCase()),
-      );
+    if (myCategorie) {
+      list = list.filter((e) => zoneCategorie(e.zone) === myCategorie);
+    }
+    if (user?.site) {
+      list = list.filter((e) => zoneToSite(e.zone) === user.site);
     }
     return list;
-  }, [exps, myZone]);
+  }, [exps, myCategorie, user?.site]);
 
   return (
     <div className="h-full flex flex-col">
