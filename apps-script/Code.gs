@@ -110,12 +110,15 @@ const COL_MOTIFS_FLOTTE = { ID:1, LIBELLE:2, CATEGORIE:3, ACTIF:4 };
 // SUIVI_LIVRAISON_INTERNE — journal quotidien des livraisons flotte
 // A=ID | B=ExpId | C=DatePrevue | D=DateReelle | E=Conformite | F=MotifRetard | G=Commentaire
 // H=ChauffeurId | I=Plaque | J=Etat | K=RaisonNonLivre | L=ProblemeLivraison | M=ConfirmeNAV | N=DateConfirmeNAV
+// O=AttributionValidee | P=PrepareVeille (PREPARER / NON PREPARER) | Q=TypeMouvement (livraison / transfert / retour)
+// NB : DateReelle (D) est saisie par le responsable des chauffeurs ; à défaut on retombe sur T_SORTIE_SITE.
 const COL_SUIVI_FLOTTE = {
   ID:1, EXP_ID:2, DATE_PREVUE:3, DATE_REELLE:4, CONFORMITE:5,
   MOTIF_RETARD:6, COMMENTAIRE:7,
   CHAUFFEUR_ID:8, PLAQUE:9,
   ETAT:10, RAISON_NON_LIVRE:11, PROBLEME_LIVRAISON:12,
   CONFIRME_NAV:13, DATE_CONFIRME_NAV:14,
+  ATTRIBUTION_VALIDEE:15, PREPARE_VEILLE:16, TYPE_MOUVEMENT:17,
 };
 
 // HEURE_DEPART_FLOTTE — suivi heure départ par chauffeur (LOI 10H)
@@ -517,8 +520,7 @@ function dureeMin(t1, t2) {
  * Calcule la date de livraison prévue selon les règles métier DMC :
  *   - Demande lundi-vendredi avant 16h  → livraison J+1 ouvrable
  *   - Demande lundi-vendredi après 16h  → livraison J+2 ouvrable
- *   - Demande samedi avant 12h          → livraison samedi (matinée OK)
- *   - Demande samedi après 12h          → livraison lundi
+ *   - Demande samedi (toute heure)      → livraison lundi
  *   - Demande dimanche                  → livraison mardi
  *
  * Retourne une ISO date string (YYYY-MM-DD).
@@ -545,11 +547,8 @@ function calculerDateLivraisonPrevue(timestampIso) {
   // Cas dimanche (jour 7) → mardi (J+2)
   if (day === 7) return fmtDate(addDays(d, 2));
 
-  // Cas samedi (jour 6)
-  if (day === 6) {
-    if (hour < 12) return fmtDate(d);              // samedi matin → samedi (mais à confirmer si possible)
-    return fmtDate(addDays(d, 2));                  // samedi après-midi → lundi
-  }
+  // Cas samedi (jour 6) : toute expédition inscrite le samedi est livrée le lundi
+  if (day === 6) return fmtDate(addDays(d, 2));
 
   // Lundi-vendredi (jours 1-5)
   // Demande avant 16h → J+1 ouvrable
@@ -929,6 +928,7 @@ function createCommande(params) {
         "", "",
         "en_attente", "", "",
         false, "",
+        false, "", "livraison",   // AttributionValidee, PrepareVeille, TypeMouvement
       ]);
     }
   });
@@ -3172,17 +3172,26 @@ function getLivraisonsFlotte(params) {
     const suivi = suiviByExp[e.ID] || {};
     const chauffeur = e.CHAUFFEUR_FLOTTE_ID ? chauffeurById[e.CHAUFFEUR_FLOTTE_ID] : null;
 
-    const dateReelle = e.T_SORTIE_SITE ? String(e.T_SORTIE_SITE).slice(0, 10) : null;
-    const datePrevue = e.DATE_LIVRAISON_PREVUE || null;
+    // Date réelle : saisie par le responsable des chauffeurs, sinon sortie du site
+    const dateSaisie = toIsoDate_(suivi.DATE_REELLE);
+    const dateReelle = dateSaisie || (e.T_SORTIE_SITE ? String(e.T_SORTIE_SITE).slice(0, 10) : null);
+    const datePrevue = toIsoDate_(e.DATE_LIVRAISON_PREVUE) || null;
     const conformite = dateReelle && datePrevue
       ? (dateReelle <= datePrevue ? "ok" : "retard")
       : null;
 
     // LOI 10H : départ effectif après 10h00 (heure locale Dakar) le jour de la livraison
     let loi10h = false;
+    let heureSortieSite = "";
     if (e.T_SORTIE_SITE) {
-      const heure = parseInt(Utilities.formatDate(new Date(e.T_SORTIE_SITE), "Africa/Dakar", "H"), 10);
-      loi10h = heure >= 10;
+      heureSortieSite = Utilities.formatDate(new Date(e.T_SORTIE_SITE), "Africa/Dakar", "HH:mm");
+      loi10h = parseInt(heureSortieSite.slice(0, 2), 10) >= 10;
+    }
+    // Heure d'inscription (coupure 16h)
+    let inscriptionAvant16h = null, heureInscription = "";
+    if (e.T0) {
+      heureInscription = Utilities.formatDate(new Date(e.T0), "Africa/Dakar", "HH:mm");
+      inscriptionAvant16h = parseInt(heureInscription.slice(0, 2), 10) < 16;
     }
 
     return {
@@ -3194,6 +3203,7 @@ function getLivraisonsFlotte(params) {
       zone: e.ZONE, statut: e.STATUT,
       // Jalons clés
       t0: e.T0 || null, tEntreeSite: e.T_ENTREE_SITE || null, tSortieSite: e.T_SORTIE_SITE || null,
+      heureInscription, inscriptionAvant16h, heureSortieSite,
       // Flotte
       modeLivraison: e.MODE_LIVRAISON,
       dateLivraisonPrevue: datePrevue,
@@ -3207,6 +3217,10 @@ function getLivraisonsFlotte(params) {
       etat: suivi.ETAT || "en_attente",      // en_attente | livre | partiel | non_livre | recupere
       raisonNonLivre: suivi.RAISON_NON_LIVRE || "",
       problemeLivraison: suivi.PROBLEME_LIVRAISON || "",
+      prepareVeille: suivi.PREPARE_VEILLE || "",                       // "PREPARER" | "NON PREPARER" | ""
+      typeMouvement: suivi.TYPE_MOUVEMENT || "livraison",              // livraison | transfert | retour
+      attributionValidee: suivi.ATTRIBUTION_VALIDEE === true || String(suivi.ATTRIBUTION_VALIDEE).toUpperCase() === "TRUE",
+      dateReelleSaisie: dateSaisie || null,
       // Chauffeur assigné
       chauffeurId: e.CHAUFFEUR_FLOTTE_ID || "",
       chauffeurNom: chauffeur ? chauffeur.NOM : (e.CHAUFFEUR || ""),
@@ -3228,68 +3242,119 @@ function getLivraisonsFlotte(params) {
   return final.sort((a, b) => String(b.t0).localeCompare(String(a.t0)));
 }
 
+/** Normalise une valeur de cellule (Date Sheets ou texte) en "yyyy-MM-dd" (ou ""). */
+function toIsoDate_(v) {
+  if (!v) return "";
+  if (Object.prototype.toString.call(v) === "[object Date]") {
+    return Utilities.formatDate(v, "Africa/Dakar", "yyyy-MM-dd");
+  }
+  return String(v).slice(0, 10);
+}
+
+/**
+ * Retourne le n° de ligne SUIVI_LIVRAISON_INTERNE d'une expédition ; la crée si besoin.
+ */
+function getOrCreateSuiviRow_(expId) {
+  const sh = getSheet("SUIVI_LIVRAISON_INTERNE");
+  const existing = sheetToObjects(sh, COL_SUIVI_FLOTTE).find(s => s.EXP_ID === expId);
+  if (existing) return { sh, row: existing._row, created: false };
+
+  const exp = sheetToObjects(getSheet("EXPEDITIONS"), COL_EXP).find(e => e.ID === expId);
+  if (!exp) throw new Error("Expédition introuvable");
+  sh.appendRow([
+    genId(), expId, toIsoDate_(exp.DATE_LIVRAISON_PREVUE), "", "",
+    "", "",
+    exp.CHAUFFEUR_FLOTTE_ID || "", exp.PLAQUE || "",
+    "en_attente", "", "",
+    false, "",
+    false, "", "livraison",
+  ]);
+  return { sh, row: sh.getLastRow(), created: true };
+}
+
 /**
  * Modifier les infos de suivi d'une livraison (motif retard, commentaire, état, etc.).
+ * Responsable des chauffeurs : date réelle, préparé la veille, type de mouvement.
  * Crée la ligne dans SUIVI_LIVRAISON_INTERNE si elle n'existe pas.
  */
 function updateSuiviLivraison(params) {
-  const { expId, motifRetard, commentaire, etat, raisonNonLivre, problemeLivraison } = params;
+  const { expId, motifRetard, commentaire, etat, raisonNonLivre, problemeLivraison,
+          dateReelle, prepareVeille, typeMouvement } = params;
   if (!expId) throw new Error("expId requis");
 
-  const sh = getSheet("SUIVI_LIVRAISON_INTERNE");
-  const data = sheetToObjects(sh, COL_SUIVI_FLOTTE);
-  const existing = data.find(s => s.EXP_ID === expId);
-
-  if (!existing) {
-    // Récupérer date prévue depuis EXPEDITIONS pour cohérence
-    const shExp = getSheet("EXPEDITIONS");
-    const exps = sheetToObjects(shExp, COL_EXP);
-    const exp = exps.find(e => e.ID === expId);
-    if (!exp) throw new Error("Expédition introuvable");
-    sh.appendRow([
-      genId(), expId, exp.DATE_LIVRAISON_PREVUE || "", exp.T_SORTIE_SITE || "", "",
-      motifRetard || "", commentaire || "",
-      "", "",
-      etat || "en_attente", raisonNonLivre || "", problemeLivraison || "",
-      false, "",
-    ]);
-    return { ok: true, created: true };
+  if (prepareVeille !== undefined && ["", "PREPARER", "NON PREPARER"].indexOf(prepareVeille) === -1) {
+    throw new Error("prepareVeille invalide");
+  }
+  if (typeMouvement !== undefined && ["livraison", "transfert", "retour"].indexOf(typeMouvement) === -1) {
+    throw new Error("typeMouvement invalide");
+  }
+  if (dateReelle !== undefined && dateReelle !== "" && !/^\d{4}-\d{2}-\d{2}$/.test(dateReelle)) {
+    throw new Error("dateReelle invalide (format AAAA-MM-JJ)");
   }
 
-  const row = existing._row;
-  if (motifRetard !== undefined)       sh.getRange(row, COL_SUIVI_FLOTTE.MOTIF_RETARD).setValue(motifRetard);
-  if (commentaire !== undefined)       sh.getRange(row, COL_SUIVI_FLOTTE.COMMENTAIRE).setValue(commentaire);
-  if (etat !== undefined)              sh.getRange(row, COL_SUIVI_FLOTTE.ETAT).setValue(etat);
-  if (raisonNonLivre !== undefined)    sh.getRange(row, COL_SUIVI_FLOTTE.RAISON_NON_LIVRE).setValue(raisonNonLivre);
-  if (problemeLivraison !== undefined) sh.getRange(row, COL_SUIVI_FLOTTE.PROBLEME_LIVRAISON).setValue(problemeLivraison);
+  const { sh, row } = getOrCreateSuiviRow_(expId);
+  const C = COL_SUIVI_FLOTTE;
+  if (motifRetard !== undefined)       sh.getRange(row, C.MOTIF_RETARD).setValue(motifRetard);
+  if (commentaire !== undefined)       sh.getRange(row, C.COMMENTAIRE).setValue(commentaire);
+  if (etat !== undefined)              sh.getRange(row, C.ETAT).setValue(etat);
+  if (raisonNonLivre !== undefined)    sh.getRange(row, C.RAISON_NON_LIVRE).setValue(raisonNonLivre);
+  if (problemeLivraison !== undefined) sh.getRange(row, C.PROBLEME_LIVRAISON).setValue(problemeLivraison);
+  if (prepareVeille !== undefined)     sh.getRange(row, C.PREPARE_VEILLE).setValue(prepareVeille);
+  if (typeMouvement !== undefined)     sh.getRange(row, C.TYPE_MOUVEMENT).setValue(typeMouvement);
+  if (dateReelle !== undefined) {
+    // Stockée en texte pour éviter la conversion automatique en date par Sheets
+    const cell = sh.getRange(row, C.DATE_REELLE);
+    cell.setNumberFormat("@");
+    cell.setValue(dateReelle);
+  }
   return { ok: true };
 }
 
 /**
- * Assigner un chauffeur (par id) à une expédition flotte interne.
- * Met à jour à la fois EXPEDITIONS.CHAUFFEUR_FLOTTE_ID et SUIVI_LIVRAISON_INTERNE.CHAUFFEUR_ID + PLAQUE.
+ * Assigner un chauffeur (par id) à une expédition flotte interne, et/ou valider l'attribution.
+ *   - chauffeurId fourni      : met à jour EXPEDITIONS + SUIVI (chauffeur + plaque) et
+ *                               remet la validation à "non validée" (il faut revalider).
+ *   - chauffeurId === ""      : retire l'attribution → la livraison repasse "A ATTRIBUER".
+ *   - valider === true/false  : valide ou déverrouille l'attribution (chauffeur requis pour valider).
  */
 function assignChauffeurLivraison(params) {
-  const { expId, chauffeurId } = params;
-  if (!expId || !chauffeurId) throw new Error("expId et chauffeurId requis");
+  const { expId, chauffeurId, valider } = params;
+  if (!expId) throw new Error("expId requis");
+  if (chauffeurId === undefined && valider === undefined) throw new Error("chauffeurId ou valider requis");
 
-  const shCha = getSheet("FLOTTE_CHAUFFEURS");
-  const ch = sheetToObjects(shCha, COL_FLOTTE_CHAUFFEURS).find(c => c.ID === chauffeurId);
-  if (!ch) throw new Error("Chauffeur introuvable");
+  const { sh: shSuivi, row } = getOrCreateSuiviRow_(expId);
+  const C = COL_SUIVI_FLOTTE;
+  let nom = "", plaque = "";
 
-  updateExpCol(expId, COL_EXP.CHAUFFEUR_FLOTTE_ID, chauffeurId);
-  updateExpCol(expId, COL_EXP.CHAUFFEUR, ch.NOM || "");
-  updateExpCol(expId, COL_EXP.PLAQUE, ch.PLAQUE || "");
-
-  // Mettre à jour aussi le miroir SUIVI_LIVRAISON_INTERNE
-  const shSuivi = getSheet("SUIVI_LIVRAISON_INTERNE");
-  const suivis = sheetToObjects(shSuivi, COL_SUIVI_FLOTTE);
-  const existing = suivis.find(s => s.EXP_ID === expId);
-  if (existing) {
-    shSuivi.getRange(existing._row, COL_SUIVI_FLOTTE.CHAUFFEUR_ID).setValue(chauffeurId);
-    shSuivi.getRange(existing._row, COL_SUIVI_FLOTTE.PLAQUE).setValue(ch.PLAQUE || "");
+  if (chauffeurId !== undefined) {
+    if (chauffeurId === "") {
+      updateExpCol(expId, COL_EXP.CHAUFFEUR_FLOTTE_ID, "");
+      updateExpCol(expId, COL_EXP.CHAUFFEUR, "");
+      updateExpCol(expId, COL_EXP.PLAQUE, "");
+      shSuivi.getRange(row, C.CHAUFFEUR_ID).setValue("");
+      shSuivi.getRange(row, C.PLAQUE).setValue("");
+    } else {
+      const ch = sheetToObjects(getSheet("FLOTTE_CHAUFFEURS"), COL_FLOTTE_CHAUFFEURS).find(c => c.ID === chauffeurId);
+      if (!ch) throw new Error("Chauffeur introuvable");
+      nom = ch.NOM || ""; plaque = ch.PLAQUE || "";
+      updateExpCol(expId, COL_EXP.CHAUFFEUR_FLOTTE_ID, chauffeurId);
+      updateExpCol(expId, COL_EXP.CHAUFFEUR, nom);
+      updateExpCol(expId, COL_EXP.PLAQUE, plaque);
+      shSuivi.getRange(row, C.CHAUFFEUR_ID).setValue(chauffeurId);
+      shSuivi.getRange(row, C.PLAQUE).setValue(plaque);
+    }
+    // Tout changement de chauffeur annule la validation précédente
+    shSuivi.getRange(row, C.ATTRIBUTION_VALIDEE).setValue(false);
   }
-  return { ok: true, chauffeurNom: ch.NOM, plaque: ch.PLAQUE };
+
+  if (valider !== undefined) {
+    const veutValider = valider === true || String(valider) === "true";
+    if (veutValider && !shSuivi.getRange(row, C.CHAUFFEUR_ID).getValue()) {
+      throw new Error("Choisis d'abord un chauffeur/véhicule avant de valider l'attribution.");
+    }
+    shSuivi.getRange(row, C.ATTRIBUTION_VALIDEE).setValue(veutValider);
+  }
+  return { ok: true, chauffeurNom: nom, plaque: plaque };
 }
 
 /**

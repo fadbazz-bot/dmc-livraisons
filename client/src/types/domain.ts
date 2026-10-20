@@ -150,6 +150,8 @@ export interface MotifRetardFlotte {
 /** Livraison flotte interne enrichie (expédition + suivi + chauffeur) */
 export type EtatLivraison = "en_attente" | "livre" | "partiel" | "non_livre" | "recupere";
 export type ConformiteLivraison = "ok" | "retard" | null;
+export type TypeMouvement = "livraison" | "transfert" | "retour";
+export type PrepareVeille = "PREPARER" | "NON PREPARER" | "";
 
 export interface LivraisonFlotte {
   id: string;
@@ -164,6 +166,11 @@ export interface LivraisonFlotte {
   t0: string | null;
   tEntreeSite: string | null;
   tSortieSite: string | null;
+  /** HH:mm (Dakar) de l'inscription de la commande et indicateur de la coupure de 16h */
+  heureInscription: string;
+  inscriptionAvant16h: boolean | null;
+  /** HH:mm (Dakar) de la sortie du site (poste de garde) */
+  heureSortieSite: string;
 
   modeLivraison: ModeLivraison;
   dateLivraisonPrevue: string | null;
@@ -177,6 +184,11 @@ export interface LivraisonFlotte {
   etat: EtatLivraison;
   raisonNonLivre: string;
   problemeLivraison: string;
+  /** Renseignés par le responsable des chauffeurs */
+  prepareVeille: PrepareVeille;
+  typeMouvement: TypeMouvement;
+  attributionValidee: boolean;
+  dateReelleSaisie: string | null;
 
   chauffeurId: string;
   chauffeurNom: string;

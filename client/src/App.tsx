@@ -14,6 +14,7 @@ import ControleurPage from "@/pages/Controleur";
 import ConfigurationPage from "@/pages/Configuration";
 import DashboardPage from "@/pages/Dashboard";
 // Module flotte interne
+import AujourdhuiPage from "@/pages/flotte/Aujourdhui";
 import PlanifieesPage from "@/pages/flotte/Planifiees";
 import EffectueesPage from "@/pages/flotte/Effectuees";
 import NonConformitesPage from "@/pages/flotte/NonConformites";
@@ -33,11 +34,11 @@ function Redirect({ to }: { to: string }) {
 
 function AppRouter() {
   const { user } = useAuth();
-  // Le chef flotte est redirigé sur /flotte/planifiees à l'ouverture
+  // Le chef flotte est redirigé sur /flotte/aujourdhui à l'ouverture
   // (il n'a accès qu'à la section Flotte interne)
   // L'agent showroom est redirigé directement sur son écran dédié
   const defaultRoute =
-    user?.role === "chef_flotte" ? "/flotte/planifiees" :
+    user?.role === "chef_flotte" ? "/flotte/aujourdhui" :
     user?.role === "agent_showroom" ? "/agent-showroom" :
     "/file";
   return (
@@ -54,7 +55,8 @@ function AppRouter() {
       <Route path="/utilisateurs" component={UtilisateursPage} />
       <Route path="/configuration" component={ConfigurationPage} />
       {/* Module flotte interne — 6 sections */}
-      <Route path="/flotte" component={() => <Redirect to="/flotte/planifiees" />} />
+      <Route path="/flotte" component={() => <Redirect to="/flotte/aujourdhui" />} />
+      <Route path="/flotte/aujourdhui"      component={AujourdhuiPage} />
       <Route path="/flotte/planifiees"      component={PlanifieesPage} />
       <Route path="/flotte/effectuees"      component={EffectueesPage} />
       <Route path="/flotte/non-conformites" component={NonConformitesPage} />

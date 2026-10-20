@@ -38,7 +38,7 @@ const NAV: NavItem2[] = [
   { to: "/justificatifs",       label: "Justificatifs",    icon: AlertTriangle, roles: ["responsable", "admin"] },
   { to: "/controleur",          label: "Contrôleur",       icon: ShieldCheck, roles: ["controleur", "admin"] },
   { to: "/dashboard",           label: "Dashboard KPI",    icon: BarChart3 },
-  { to: "/flotte/planifiees",   label: "Flotte interne",   icon: TruckIcon,   flagSuperviseur: true },
+  { to: "/flotte/aujourdhui",   label: "Flotte interne",   icon: TruckIcon,   flagSuperviseur: true },
   { to: "/utilisateurs",        label: "Utilisateurs",     icon: Users,       roles: ["admin"] },
   { to: "/configuration",       label: "Configuration",    icon: Settings,    roles: ["admin"] },
 ];
@@ -68,7 +68,7 @@ export function Sidebar() {
         {NAV.filter((n) => {
           // Chef flotte voit UNIQUEMENT "Flotte interne" (et rien d'autre)
           if (role === "chef_flotte") {
-            return n.to === "/flotte/planifiees";
+            return n.to === "/flotte/aujourdhui";
           }
           // Agent showroom voit UNIQUEMENT son écran dédié (et rien d'autre)
           if (role === "agent_showroom") {
@@ -84,7 +84,7 @@ export function Sidebar() {
             location === item.to ||
             (item.to === "/file" && location === "/") ||
             // Sidebar reste active sur toutes les sous-pages /flotte/*
-            (item.to === "/flotte/planifiees" && location.startsWith("/flotte"));
+            (item.to === "/flotte/aujourdhui" && location.startsWith("/flotte"));
           const Icon = item.icon;
           return (
             <Link

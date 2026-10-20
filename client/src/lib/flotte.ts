@@ -9,8 +9,7 @@
  * Calcule la date prévue de livraison interne selon les règles DMC :
  *   - Lundi-vendredi avant 16h → J+1 ouvrable
  *   - Lundi-vendredi après 16h → J+2 ouvrable
- *   - Samedi avant 12h         → samedi (matinée OK)
- *   - Samedi après 12h         → lundi
+ *   - Samedi (toute heure)     → lundi
  *   - Dimanche                  → mardi
  */
 export function calculerDatePrevueLocale(date: Date = new Date()): string {
@@ -28,11 +27,8 @@ export function calculerDatePrevueLocale(date: Date = new Date()): string {
   // Dimanche → mardi
   if (day === 0) return fmt(addDays(date, 2));
 
-  // Samedi
-  if (day === 6) {
-    if (hour < 12) return fmt(date); // samedi matin → livraison samedi
-    return fmt(addDays(date, 2));     // samedi après-midi → lundi
-  }
+  // Samedi : toute expédition inscrite le samedi est livrée le lundi
+  if (day === 6) return fmt(addDays(date, 2));
 
   // Lundi-vendredi
   let target = addDays(date, hour < 16 ? 1 : 2);

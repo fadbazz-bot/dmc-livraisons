@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   Truck,
   CalendarClock,
+  CalendarCheck,
   CheckCircle2,
   AlertTriangle,
   BarChart3,
@@ -23,6 +24,7 @@ interface FlotteSection {
 }
 
 const SECTIONS: FlotteSection[] = [
+  { to: "/flotte/aujourdhui",        label: "Aujourd'hui",   icon: CalendarCheck,  description: "Livraisons du jour" },
   { to: "/flotte/planifiees",        label: "Planifiées",     icon: CalendarClock,  description: "Livraisons à venir" },
   { to: "/flotte/effectuees",        label: "Effectuées",     icon: CheckCircle2,   description: "Livraisons terminées" },
   { to: "/flotte/non-conformites",   label: "Non-conformités",icon: AlertTriangle,  description: "Retards & LOI 10h" },
@@ -113,7 +115,7 @@ export function FlotteLayout({ children, subtitle, rightSlot }: Props) {
         {/* Section nav */}
         <nav className="flex gap-1 overflow-x-auto -mx-1 px-1 pb-1 -mb-1">
           {SECTIONS.map((s) => {
-            const active = location === s.to || (s.to === "/flotte/planifiees" && location === "/flotte");
+            const active = location === s.to || (s.to === "/flotte/aujourdhui" && location === "/flotte");
             const Icon = s.icon;
             return (
               <Link

@@ -26,6 +26,8 @@ import type {
   Kpi,
   KpiFlotte,
   LivraisonFlotte,
+  PrepareVeille,
+  TypeMouvement,
   MotifRetard,
   MotifRetardFlotte,
   Utilisateur,
@@ -382,9 +384,17 @@ export const flotteLivraisons = {
     etat?: EtatLivraison;
     raisonNonLivre?: string;
     problemeLivraison?: string;
+    /** AAAA-MM-JJ, saisie par le responsable des chauffeurs ("" pour effacer) */
+    dateReelle?: string;
+    prepareVeille?: PrepareVeille;
+    typeMouvement?: TypeMouvement;
   }) => apiPost<{ ok: true }>("updateSuiviLivraison", input),
 
-  assignChauffeur: (input: { expId: string; chauffeurId: string }) =>
+  /**
+   * chauffeurId : affecte (""  = retire → A ATTRIBUER ; remet la validation à non validée).
+   * valider     : valide / déverrouille l'attribution.
+   */
+  assignChauffeur: (input: { expId: string; chauffeurId?: string; valider?: boolean }) =>
     apiPost<{ ok: true; chauffeurNom: string; plaque: string }>("assignChauffeurLivraison", input),
 
   kpi: (filters: { dateDebut: string; dateFin: string }) =>
