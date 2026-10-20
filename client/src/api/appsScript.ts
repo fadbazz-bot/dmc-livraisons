@@ -200,10 +200,21 @@ export const jalons = {
     ),
 
   /** Responsable magasin saisit le code PIN remis par le client → chargement enclenché */
+  /**
+   * Saisie du code (v3). Si `commandesChargees` est fourni et ne couvre
+   * qu'une partie des N° commande de l'expédition, un reliquat est créé
+   * automatiquement côté backend pour les commandes restantes (nouveau code,
+   * nouvelle instruction) — voir la réponse `reliquat`.
+   */
   saisieCode: (
     expId: string,
-    ctx: ActeurContext & { codeRetraitSaisi: string },
-  ) => apiPost<{ ok: true; tSaisieCode: string }>("jalon_saisie_code", { expId, ...ctx }),
+    ctx: ActeurContext & { codeRetraitSaisi: string; commandesChargees?: string[] },
+  ) =>
+    apiPost<{
+      ok: true;
+      tSaisieCode: string;
+      reliquat: { id: string; numCmdNav: string; codeRetrait: string; zone: string } | null;
+    }>("jalon_saisie_code", { expId, ...ctx }),
 
   /** Sortie site avec photos véhicule chargé (au moins 1, plusieurs autorisées) */
   sortieSite: (

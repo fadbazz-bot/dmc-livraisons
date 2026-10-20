@@ -64,6 +64,12 @@ export interface Expedition {
   zone: string;
   magasinLabel: string;
   statut: StatutExpedition;
+  /**
+   * Si cette expédition est un reliquat né d'un chargement partiel (voir
+   * jalonSaisieCode côté backend), pointe vers l'expédition d'origine.
+   * null pour une expédition normale.
+   */
+  expParentId: string | null;
 
   // Jalons v2
   t0: string | null;

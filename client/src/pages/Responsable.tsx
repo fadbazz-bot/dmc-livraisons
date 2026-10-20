@@ -161,6 +161,11 @@ function ResponsableCard({
             <span className="font-medium text-slate-800 truncate">
               {exp.nomClient || "Client inconnu"}
             </span>
+            {exp.expParentId && (
+              <span className="text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">
+                Reliquat
+              </span>
+            )}
           </div>
           <div className="mt-1 text-xs text-slate-500 flex items-center gap-3 flex-wrap">
             <span>📍 {exp.zone}</span>
