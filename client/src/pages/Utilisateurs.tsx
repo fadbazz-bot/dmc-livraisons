@@ -102,11 +102,8 @@ export default function UtilisateursPage() {
       <div className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
         <div className="flex items-center justify-between gap-3 mb-3">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-brand-900 text-white flex items-center justify-center">
-              <Users className="h-5 w-5" />
-            </div>
             <div>
-              <h1 className="text-lg font-bold text-slate-900">Gestion des utilisateurs</h1>
+              <h1 className="text-xl font-semibold tracking-tight text-slate-900">Gestion des utilisateurs</h1>
               <p className="text-xs text-slate-500">
                 Ajouter, modifier, désactiver ou supprimer les comptes
               </p>
@@ -157,7 +154,7 @@ export default function UtilisateursPage() {
           <div className="card overflow-hidden">
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                <thead className="bg-slate-50 text-xs font-mediumr text-slate-500 border-b border-slate-200">
                   <tr>
                     <th className="px-4 py-3 text-left">Nom</th>
                     <th className="px-4 py-3 text-left">Email</th>

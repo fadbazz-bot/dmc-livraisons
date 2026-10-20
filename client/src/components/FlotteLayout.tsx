@@ -2,7 +2,6 @@ import { type ReactNode } from "react";
 import { useLocation, Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  Truck,
   CalendarClock,
   CalendarCheck,
   CheckCircle2,
@@ -12,6 +11,7 @@ import {
   RefreshCw,
   FileUp,
 } from "lucide-react";
+import { PageHeader } from "@/components/PageHeader";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/Toast";
 import { cn } from "@/lib/cn";
@@ -86,34 +86,26 @@ export function FlotteLayout({ children, subtitle, rightSlot }: Props) {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
-        <div className="flex items-center justify-between gap-3 mb-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="h-10 w-10 rounded-lg bg-brand-900 text-white flex items-center justify-center shrink-0">
-              <Truck className="h-5 w-5" />
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-lg font-bold text-slate-900">Flotte interne</h1>
-              <p className="text-xs text-slate-500 truncate">{subtitle ?? "Suivi des livraisons internes DMC"}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
+      <PageHeader
+        title="Flotte interne"
+        subtitle={subtitle ?? "Suivi des livraisons internes DMC"}
+        actions={
+          <>
             {rightSlot}
             <button
               type="button"
               onClick={handleSync}
-              className="btn-outline gap-1.5"
+              className="btn-outline"
               title="Recharge les données depuis Google Sheets"
+              aria-label="Synchroniser"
             >
               <RefreshCw className="h-4 w-4" />
               <span className="hidden sm:inline">Synchroniser</span>
             </button>
-          </div>
-        </div>
-
-        {/* Section nav */}
-        <nav className="flex gap-1 overflow-x-auto -mx-1 px-1 pb-1 -mb-1">
+          </>
+        }
+      >
+        <nav className="-mx-1 flex gap-1 overflow-x-auto px-1" aria-label="Sections flotte">
           {SECTIONS.map((s) => {
             const active = location === s.to || (s.to === "/flotte/aujourdhui" && location === "/flotte");
             const Icon = s.icon;
@@ -121,11 +113,10 @@ export function FlotteLayout({ children, subtitle, rightSlot }: Props) {
               <Link
                 key={s.to}
                 href={s.to}
+                aria-current={active ? "page" : undefined}
                 className={cn(
-                  "shrink-0 inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-                  active
-                    ? "bg-brand-900 text-white shadow-sm"
-                    : "text-slate-600 hover:bg-slate-100",
+                  "inline-flex shrink-0 items-center gap-2 rounded-ctl px-3 py-1.5 text-sm font-medium transition-colors",
+                  active ? "bg-brand-700 text-white" : "text-slate-600 hover:bg-slate-100",
                 )}
               >
                 <Icon className="h-4 w-4" />
@@ -134,10 +125,10 @@ export function FlotteLayout({ children, subtitle, rightSlot }: Props) {
             );
           })}
         </nav>
-      </div>
+      </PageHeader>
 
       {/* Contenu */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</div>
+      <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6">{children}</div>
     </div>
   );
 }

@@ -187,11 +187,8 @@ export default function NouvelleDemandePage() {
       {/* Header */}
       <div className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-lg bg-brand-900 text-white flex items-center justify-center">
-            <PackagePlus className="h-5 w-5" />
-          </div>
           <div>
-            <h1 className="text-lg font-bold text-slate-900">Nouvelle demande</h1>
+            <h1 className="text-xl font-semibold tracking-tight text-slate-900">Nouvelle demande</h1>
             <p className="text-xs text-slate-500">
               Crée une commande et coche les magasins de livraison
             </p>
@@ -650,7 +647,7 @@ function CodesRetraitModal({
     <Modal
       open
       onClose={onClose}
-      title="🔐 Codes de retrait générés"
+      title="Codes de retrait générés"
       description="Tu pourras les retrouver via le bouton « Code » sur la file des commandes."
       size="lg"
       footer={
@@ -662,13 +659,13 @@ function CodesRetraitModal({
       <div className="space-y-3">
         {isInterne ? (
           <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-900">
-            🚛 <strong>Livraison interne (Flotte DMC)</strong> — le responsable flotte prendra le
+            <strong>Livraison interne (Flotte DMC)</strong> — le responsable flotte prendra le
             relais : assignation chauffeur, planification, suivi conformité date prévue. Tu peux
             suivre l'avancée dans <strong>Flotte interne → Planifiées</strong>.
           </div>
         ) : (
           <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-900">
-            ⚠️ Ces codes PIN doivent être remis au client quand il vient les récupérer. Tu pourras
+            Ces codes PIN doivent être remis au client quand il vient les récupérer. Tu pourras
             les revoir plus tard dans la file via le bouton « Code ».
           </div>
         )}

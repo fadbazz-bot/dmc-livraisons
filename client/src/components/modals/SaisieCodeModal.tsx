@@ -107,7 +107,7 @@ export function SaisieCodeModal({ exp, open, onClose }: Props) {
     <Modal
       open={open}
       onClose={handleClose}
-      title="🔐 Saisie du code de livraison"
+      title="Saisie du code de livraison"
       description="Le client te remet le code reçu du commercial."
       size={isMultiple ? "lg" : "md"}
       footer={

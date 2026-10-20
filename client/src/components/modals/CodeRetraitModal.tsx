@@ -60,7 +60,7 @@ export function CodeRetraitModal({ exp, open, onClose }: Props) {
         setCopied(false);
         onClose();
       }}
-      title="🔐 Code retrait"
+      title="Code retrait"
       description="Consultation tracée — toute ouverture est enregistrée."
       size="md"
       footer={
@@ -98,7 +98,7 @@ export function CodeRetraitModal({ exp, open, onClose }: Props) {
               <div className="flex items-center gap-3">
                 <KeyRound className="h-5 w-5 opacity-70" />
                 <div className="text-left">
-                  <div className="text-[11px] uppercase tracking-wider opacity-70">Code PIN</div>
+                  <div className="text-xs font-medium opacity-70">Code PIN</div>
                   <div className="text-3xl font-mono font-bold tracking-[0.4em] leading-tight">
                     {m.data.codeRetrait}
                   </div>

@@ -131,7 +131,7 @@ export function BonLivraisonModal({ exp, open, onClose }: Props) {
       <Modal
         open={open}
         onClose={onClose}
-        title="🧾 Bon de livraison"
+        title="Bon de livraison"
         description="Document à imprimer et remettre au chauffeur."
         size="lg"
         footer={

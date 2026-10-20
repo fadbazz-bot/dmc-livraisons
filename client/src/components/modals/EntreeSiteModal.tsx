@@ -79,7 +79,7 @@ export function EntreeSiteModal({ exp, open, onClose }: Props) {
         reset();
         onClose();
       }}
-      title="🚛 Entrée site"
+      title="Entrée site"
       description="Enregistre l'arrivée du camion et démarre le chrono."
       size="lg"
       footer={
@@ -161,7 +161,7 @@ export function EntreeSiteModal({ exp, open, onClose }: Props) {
 
         {/* Photos — sécurité et traçabilité */}
         <div className="pt-2 border-t border-slate-100">
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+          <div className="text-sm font-medium text-slate-500 mb-2">
             Pièces à photographier (obligatoire pour sécurité)
           </div>
           <div className="grid sm:grid-cols-2 gap-3">

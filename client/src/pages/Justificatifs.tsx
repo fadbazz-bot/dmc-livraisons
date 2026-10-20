@@ -48,11 +48,8 @@ export default function JustificatifsPage() {
       <div className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
         <div className="flex items-center justify-between gap-3 mb-3">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-amber-500 text-white flex items-center justify-center">
-              <AlertTriangle className="h-5 w-5" />
-            </div>
             <div>
-              <h1 className="text-lg font-bold text-slate-900">Justificatifs de retard</h1>
+              <h1 className="text-xl font-semibold tracking-tight text-slate-900">Justificatifs de retard</h1>
               <p className="text-xs text-slate-500">
                 {user?.nom}
                 {myZone && ` — Zone ${myZone}`} · {retards.length} à justifier
@@ -95,7 +92,7 @@ export default function JustificatifsPage() {
           </div>
         ) : filtered.length === 0 ? (
           <div className="card p-10 text-center text-sm text-slate-500">
-            🎉 Aucun retard à justifier sur ta zone. Bon boulot.
+            Aucun retard à justifier sur ta zone. Bon boulot.
           </div>
         ) : (
           <div className="space-y-2">
@@ -134,12 +131,12 @@ function RetardRow({
             </span>
           </div>
           <div className="mt-1 text-xs text-slate-500 flex items-center gap-3 flex-wrap">
-            <span>📍 {exp.zone}</span>
-            {exp.plaque && <span>🚗 {exp.plaque}</span>}
-            {exp.chauffeur && <span>👤 {exp.chauffeur}</span>}
+            <span>{exp.zone}</span>
+            {exp.plaque && <span className="num">{exp.plaque}</span>}
+            {exp.chauffeur && <span>{exp.chauffeur}</span>}
             {exp.dureeService !== null && (
               <span className="text-red-600 font-medium">
-                ⏱ {formatDuree(exp.dureeService)} (dépassé)
+                {formatDuree(exp.dureeService)} (dépassé)
               </span>
             )}
             <span>Sortie {formatRelative(exp.tSortieSite)}</span>

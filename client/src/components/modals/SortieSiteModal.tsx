@@ -33,8 +33,8 @@ export function SortieSiteModal({ exp, open, onClose }: Props) {
     },
     onSuccess: (res) => {
       const msg = res.enRetard
-        ? `Sortie validée — ⚠️ retard ${res.dureeMin} min, justification requise`
-        : `Sortie validée — ✅ ${res.dureeMin} min, dans les temps`;
+        ? `Sortie validée — retard ${res.dureeMin} min, justification requise`
+        : `Sortie validée — ${res.dureeMin} min, dans les temps`;
       toast.success(msg);
       qc.invalidateQueries({ queryKey: ["expeditions"] });
       setPhotos([]);
@@ -58,7 +58,7 @@ export function SortieSiteModal({ exp, open, onClose }: Props) {
         setPhotos([]);
         onClose();
       }}
-      title="🚗 Valider la sortie"
+      title="Valider la sortie"
       description="Au moins une photo du véhicule chargé est obligatoire."
       size="lg"
       footer={

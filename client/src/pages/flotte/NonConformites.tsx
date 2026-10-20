@@ -55,13 +55,13 @@ export default function NonConformitesPage() {
           </div>
         ) : livraisons.length === 0 ? (
           <div className="card p-10 text-center text-sm text-slate-500">
-            🎉 Aucune non-conformité sur la période. Bon boulot !
+            Aucune non-conformité sur la période. Bon boulot !
           </div>
         ) : (
           <div className="card overflow-hidden">
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                <thead className="bg-slate-50 text-xs font-mediumr text-slate-500 border-b border-slate-200">
                   <tr>
                     <th className="px-3 py-2.5 text-left">Commande créée</th>
                     <th className="px-3 py-2.5 text-left">Prévue</th>

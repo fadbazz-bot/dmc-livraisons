@@ -29,8 +29,8 @@ export function SortieShowroomModal({ exp, open, onClose }: Props) {
     },
     onSuccess: (res) => {
       const msg = res.enRetard
-        ? `Sortie validée — ⚠️ retard ${res.dureeMin} min, justification requise`
-        : `Sortie validée — ✅ ${res.dureeMin} min, dans les temps`;
+        ? `Sortie validée — retard ${res.dureeMin} min, justification requise`
+        : `Sortie validée — ${res.dureeMin} min, dans les temps`;
       toast.success(msg);
       qc.invalidateQueries({ queryKey: ["expeditions"] });
       onClose();
@@ -46,7 +46,7 @@ export function SortieShowroomModal({ exp, open, onClose }: Props) {
     <Modal
       open={open}
       onClose={onClose}
-      title="🚪 Sortie showroom"
+      title="Sortie showroom"
       description="Valide la sortie du client — la commande est terminée."
       size="md"
       footer={

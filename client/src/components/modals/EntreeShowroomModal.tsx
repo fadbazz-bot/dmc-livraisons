@@ -64,7 +64,7 @@ export function EntreeShowroomModal({ exp, open, onClose }: Props) {
         reset();
         onClose();
       }}
-      title="🚪 Entrée showroom"
+      title="Entrée showroom"
       description="Autorise le client à entrer dans le showroom."
       size="md"
       footer={

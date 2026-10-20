@@ -111,7 +111,7 @@ export default function PlanifieesPage() {
               <div className="card overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
-                    <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                    <thead className="bg-slate-50 text-xs font-mediumr text-slate-500 border-b border-slate-200">
                       <tr>
                         <th className="px-3 py-2.5 text-left">Date prévue</th>
                         <th className="px-3 py-2.5 text-left">N° commande</th>
@@ -181,7 +181,7 @@ export default function PlanifieesPage() {
                 </div>
                 <div className="text-sm font-medium text-slate-900">{l.nomClient || "—"}</div>
                 <div className="text-xs text-slate-500">
-                  📍 {l.zone} {l.chauffeurNom && `· 🚛 ${l.chauffeurNom}`} {l.chauffeurPlaque && `· ${l.chauffeurPlaque}`}
+                  {l.zone} {l.chauffeurNom && `· ${l.chauffeurNom}`} {l.chauffeurPlaque && `· ${l.chauffeurPlaque}`}
                 </div>
               </div>
             ))}

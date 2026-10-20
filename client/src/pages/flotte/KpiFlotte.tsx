@@ -152,7 +152,7 @@ export default function KpiFlottePage() {
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
-                    <thead className="text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                    <thead className="text-xs font-mediumr text-slate-500 border-b border-slate-200">
                       <tr>
                         <th className="px-2 py-2 text-left">Chauffeur</th>
                         <th className="px-2 py-2 text-right">Total</th>
@@ -166,9 +166,6 @@ export default function KpiFlottePage() {
                       {kpi.classementChauffeurs.map((c, i) => (
                         <tr key={c.nom}>
                           <td className="px-2 py-2 font-medium text-slate-900 flex items-center gap-1.5">
-                            {i === 0 && <span>🥇</span>}
-                            {i === 1 && <span>🥈</span>}
-                            {i === 2 && <span>🥉</span>}
                             {c.nom}
                           </td>
                           <td className="px-2 py-2 text-right font-mono text-xs">{c.total}</td>
@@ -233,7 +230,7 @@ function KpiCard({
   return (
     <div className="card p-4">
       <div className="flex items-start justify-between gap-2">
-        <div className="text-[11px] uppercase tracking-wider font-medium text-slate-500">{title}</div>
+        <div className="text-xs font-medium text-slate-500">{title}</div>
         <Icon className="h-4 w-4 text-slate-400" />
       </div>
       <div className={cn("text-2xl font-bold mt-1", colorClass || "text-slate-900")}>{value}</div>
@@ -245,7 +242,7 @@ function KpiCard({
 function SmallCard({ label, value, accent }: { label: string; value: number; accent?: string }) {
   return (
     <div className="card p-3">
-      <div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="text-[11px] text-slate-500">{label}</div>
       <div className={cn("text-lg font-bold mt-0.5", accent || "text-slate-900")}>{value}</div>
     </div>
   );

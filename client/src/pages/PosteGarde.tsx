@@ -47,11 +47,8 @@ export default function PosteGardePage() {
       <div className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
         <div className="flex items-center justify-between gap-3 mb-3">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-brand-900 text-white flex items-center justify-center">
-              <ShieldCheck className="h-5 w-5" />
-            </div>
             <div>
-              <h1 className="text-lg font-bold text-slate-900">Poste de garde</h1>
+              <h1 className="text-xl font-semibold tracking-tight text-slate-900">Poste de garde</h1>
               <p className="text-xs text-slate-500">
                 {user?.nom} {mySite && `— Site ${mySite}`}
               </p>
@@ -69,12 +66,12 @@ export default function PosteGardePage() {
         </div>
 
         {/* Tabs */}
-        <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-lg">
+        <div className="grid grid-cols-3 gap-1 rounded-ctl bg-slate-100 p-1">
           <Tab
             active={section === "clients"}
             onClick={() => setSection("clients")}
             icon={<Users className="h-4 w-4" />}
-            label="Par client"
+            label="Clients"
             count={aEntrer.length}
             countColor="bg-brand-900"
           />
@@ -82,7 +79,7 @@ export default function PosteGardePage() {
             active={section === "entrer"}
             onClick={() => setSection("entrer")}
             icon={<Truck className="h-4 w-4" />}
-            label="Toutes entrées"
+            label="Entrées"
             count={aEntrer.length}
             countColor="bg-brand-900"
           />
@@ -165,7 +162,7 @@ function Tab({
     >
       {icon}
       <span className="hidden sm:inline">{label}</span>
-      <span className="sm:hidden text-[10px]">{label.split(" ")[0]}</span>
+      <span className="sm:hidden text-xs">{label}</span>
       {count > 0 && (
         <span className={cn("px-1.5 py-0.5 rounded-full text-white text-[10px] font-bold", countColor)}>
           {count}
@@ -311,7 +308,7 @@ function ClientCard({
               className="w-full flex items-center justify-between gap-3 p-3 rounded-lg border border-slate-200 bg-white hover:border-brand-900 hover:shadow-card transition-all text-left"
             >
               <div className="min-w-0 flex-1">
-                <div className="font-medium text-slate-900">📍 {e.zone}</div>
+                <div className="font-medium text-slate-900">{e.zone}</div>
                 <div className="text-xs text-slate-500 mt-0.5">
                   Préparée {formatRelative(e.t0)}
                 </div>
@@ -380,10 +377,10 @@ function ExpActionCard({
             </span>
           </div>
           <div className="mt-1 text-xs text-slate-500 flex items-center gap-3 flex-wrap">
-            <span>📍 {exp.zone}</span>
-            {exp.plaque && <span>🚗 {exp.plaque}</span>}
-            {exp.chauffeur && <span>👤 {exp.chauffeur}</span>}
-            {exp.numeroBL && <span>📄 {exp.numeroBL}</span>}
+            <span>{exp.zone}</span>
+            {exp.plaque && <span className="num">{exp.plaque}</span>}
+            {exp.chauffeur && <span>{exp.chauffeur}</span>}
+            {exp.numeroBL && <span>{exp.numeroBL}</span>}
             <span>{formatRelative(exp.t0)}</span>
           </div>
         </div>

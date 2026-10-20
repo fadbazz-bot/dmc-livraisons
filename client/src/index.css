@@ -3,29 +3,90 @@
 @tailwind utilities;
 
 /*
- * Classes utilitaires reconstruites à partir du CSS compilé du site en
- * production (fadbazz-bot.github.io/dmc-livraisons) pour garantir un rendu
- * visuel identique. Si le design doit évoluer, modifier ici.
+ * Système de design DMC Livraisons.
+ * Toutes les pages s'appuient sur ces classes : modifier ici change tout le site.
+ *   Boutons  : btn-primary, btn-outline, btn-ghost, btn-danger
+ *   Surfaces : card, card-hover
+ *   Champs   : input, label
+ *   Statuts  : badge-neutral | info | progress | success | warn | danger
+ *   Données  : num (police mono pour n° commande, plaques, codes)
  */
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-canvas text-slate-800 font-sans antialiased;
+    font-feature-settings: "tnum" 1;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand-400 ring-offset-1 ring-offset-white;
+  }
+  ::selection {
+    @apply bg-brand-200 text-brand-950;
+  }
+}
+
 @layer components {
+  /* ── Boutons ───────────────────────────────────────── */
+  .btn-primary,
+  .btn-outline,
+  .btn-ghost,
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-ctl px-3.5 py-2 text-sm font-medium transition-colors duration-150 disabled:opacity-50 disabled:pointer-events-none;
+  }
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-150 bg-brand-900 text-white shadow-sm hover:bg-brand-700 disabled:opacity-50 disabled:pointer-events-none;
+    @apply bg-brand-700 text-white shadow-card hover:bg-brand-800 active:bg-brand-900;
   }
   .btn-outline {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-150 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:pointer-events-none;
+    @apply border border-line bg-white text-slate-700 shadow-card hover:bg-slate-50 hover:border-slate-300 active:bg-slate-100;
   }
+  .btn-ghost {
+    @apply text-slate-600 hover:bg-slate-100 hover:text-slate-900 active:bg-slate-200;
+  }
+  .btn-danger {
+    @apply bg-red-600 text-white shadow-card hover:bg-red-700 active:bg-red-800;
+  }
+
+  /* ── Surfaces ──────────────────────────────────────── */
   .card {
-    @apply rounded-xl border border-slate-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04),0_1px_2px_rgba(15,23,42,0.06)];
+    @apply rounded-card border border-line bg-white shadow-card;
   }
   .card-hover {
-    @apply transition-shadow duration-150 hover:shadow-md;
+    @apply transition-colors duration-150 hover:border-slate-300;
   }
+
+  /* ── Champs ────────────────────────────────────────── */
   .input {
-    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-200 focus:border-brand-400;
+    @apply w-full rounded-ctl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200 disabled:bg-slate-50 disabled:text-slate-500;
   }
   .label {
     @apply mb-1.5 block text-sm font-medium text-slate-700;
   }
+
+  /* ── Statuts : pastille + libellé ──────────────────── */
+  .badge-neutral,
+  .badge-info,
+  .badge-progress,
+  .badge-success,
+  .badge-warn,
+  .badge-danger {
+    @apply inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+  .badge-neutral  { @apply bg-slate-100 text-slate-600; }
+  .badge-info     { @apply bg-sky-50 text-sky-800; }
+  .badge-progress { @apply bg-indigo-50 text-indigo-800; }
+  .badge-success  { @apply bg-emerald-50 text-emerald-800; }
+  .badge-warn     { @apply bg-amber-50 text-amber-800; }
+  .badge-danger   { @apply bg-red-50 text-red-800; }
+
+  /* ── Données techniques ────────────────────────────── */
+  .num {
+    @apply font-mono text-[0.8125rem] tracking-tight;
+  }
+
+  /* ── Animations ────────────────────────────────────── */
   .animate-in {
     animation: fadeIn 0.18s ease-out;
   }
@@ -39,5 +100,24 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
   }
 }

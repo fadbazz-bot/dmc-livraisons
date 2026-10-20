@@ -76,7 +76,7 @@ export default function ImportNavPage() {
           >
             <FileUp className="h-8 w-8 text-slate-400" />
             <span className="text-sm font-medium text-slate-700">
-              {filename ? `📄 ${filename}` : "Cliquer pour choisir un fichier CSV/TSV"}
+              {filename ? `${filename}` : "Cliquer pour choisir un fichier CSV/TSV"}
             </span>
             <span className="text-xs text-slate-500">Ou glisser-déposer ici</span>
             <input
@@ -120,7 +120,7 @@ export default function ImportNavPage() {
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full text-sm">
-                  <thead className="text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                  <thead className="text-xs font-mediumr text-slate-500 border-b border-slate-200">
                     <tr>
                       <th className="px-3 py-2 text-left">N° Commande NAV</th>
                       <th className="px-3 py-2 text-left">Dépôt</th>
@@ -193,7 +193,7 @@ function ResultStat({
 }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-3">
-      <div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="text-[11px] text-slate-500">{label}</div>
       <div className={cn("text-xl font-bold mt-0.5", accent || "text-slate-900")}>{value}</div>
     </div>
   );

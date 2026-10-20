@@ -54,3 +54,21 @@ export function kpiBgClass(pct: number | null | undefined): string {
   if (pct >= 60) return "bg-amber-50 text-amber-700";
   return "bg-red-50 text-red-700";
 }
+
+/** Jour de la date ISO en heure de Dakar (UTC+0) : "yyyy-MM-dd". */
+export function jourISO(iso: string | null | undefined): string {
+  if (!iso) return "";
+  return String(iso).slice(0, 10);
+}
+
+/** "Aujourd'hui", "Hier" ou "mardi 14 octobre". */
+export function formatJourLong(jour: string): string {
+  if (!jour) return "Date inconnue";
+  const today = new Date().toISOString().slice(0, 10);
+  const hier = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  if (jour === today) return "Aujourd'hui";
+  if (jour === hier) return "Hier";
+  const d = new Date(jour + "T00:00:00Z");
+  if (isNaN(d.getTime())) return jour;
+  return d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+}

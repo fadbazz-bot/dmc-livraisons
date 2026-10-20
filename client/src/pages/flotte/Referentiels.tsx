@@ -85,7 +85,7 @@ function DemoBanner() {
         }
         return;
       }
-      toast.success(`${res.created} commandes démo injectées ✨`);
+      toast.success(`${res.created} commandes démo injectées `);
       invalidateAll();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erreur"),
@@ -258,7 +258,7 @@ function ClientsTab() {
         <div className="card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
+              <thead className="bg-slate-50 text-xs font-mediumr text-slate-500 border-b border-slate-200">
                 <tr>
                   <th className="px-3 py-2.5 text-left">Code</th>
                   <th className="px-3 py-2.5 text-left">Nom client</th>
@@ -378,7 +378,7 @@ function ChauffeursTab() {
 
       <div className="card overflow-hidden">
         <table className="min-w-full text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
+          <thead className="bg-slate-50 text-xs font-mediumr text-slate-500 border-b border-slate-200">
             <tr>
               <th className="px-4 py-3 text-left">Nom</th>
               <th className="px-4 py-3 text-left">Plaque</th>
@@ -485,7 +485,7 @@ function MotifsTab() {
 
       <div className="card overflow-hidden">
         <table className="min-w-full text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
+          <thead className="bg-slate-50 text-xs font-mediumr text-slate-500 border-b border-slate-200">
             <tr>
               <th className="px-4 py-3 text-left">Libellé</th>
               <th className="px-4 py-3 text-left">Catégorie</th>
@@ -558,7 +558,7 @@ function StatCard({
     accent === "ok" ? "text-emerald-600" : accent === "warn" ? "text-amber-600" : accent === "info" ? "text-blue-600" : "text-slate-900";
   return (
     <div className="card p-3">
-      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="text-xs font-medium text-slate-500">{label}</div>
       <div className={cn("text-2xl font-bold mt-1", accentClass)}>{value}</div>
     </div>
   );

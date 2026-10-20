@@ -34,7 +34,7 @@ const ETATS: { value: EtatLivraison; label: string }[] = [
 const MOUVEMENTS: { value: TypeMouvement; label: string }[] = [
   { value: "livraison", label: "Livraison" },
   { value: "transfert", label: "Transfert" },
-  { value: "retour", label: "Retour / récupération" },
+  { value: "retour", label: "Retour" },
 ];
 
 const STATUT_SITE: Record<string, string> = {
@@ -178,21 +178,18 @@ function TableauSite({
       ) : (
         <div className="card overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
+            <table className="min-w-full text-sm max-md:block">
+              <thead className="bg-slate-50 text-xs font-medium text-slate-500 border-b border-slate-200 max-md:hidden">
                 <tr>
-                  <th className="px-3 py-2.5 text-left">Inscription</th>
                   <th className="px-3 py-2.5 text-left">Commande / client</th>
-                  <th className="px-3 py-2.5 text-left">Dépôt</th>
                   <th className="px-3 py-2.5 text-left">Mouvement</th>
                   <th className="px-3 py-2.5 text-left">Préparé la veille</th>
                   <th className="px-3 py-2.5 text-left">Chauffeur / véhicule</th>
-                  <th className="px-3 py-2.5 text-left">Site</th>
                   <th className="px-3 py-2.5 text-left">Date réelle</th>
-                  <th className="px-3 py-2.5 text-left">État</th>
+                  <th className="px-3 py-2.5 text-left">État et sortie du site</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-100 max-md:block">
                 {lignes.map((l) => (
                   <Ligne key={l.id} l={l} chauffeurs={chauffeurs} today={today} />
                 ))}
@@ -288,30 +285,24 @@ function Ligne({
   return (
     <tr
       className={cn(
-        "align-top",
+        "align-top max-md:block max-md:pb-3",
         enRetard ? "bg-red-50/70 border-l-4 border-red-400" : "hover:bg-slate-50/60",
       )}
     >
-      <td className="px-3 py-2 whitespace-nowrap">
-        <div className="font-mono text-[11px] text-slate-700">{l.heureInscription || "—"}</div>
-        {l.inscriptionAvant16h !== null && (
-          <span
-            className={cn(
-              "text-[10px] font-medium",
-              l.inscriptionAvant16h ? "text-emerald-700" : "text-orange-700",
-            )}
-          >
-            {l.inscriptionAvant16h ? "Avant 16H" : "Après 16H"}
-          </span>
-        )}
-      </td>
-
-      <td className="px-3 py-2 min-w-[170px]">
-        <div className="font-mono text-[11px] text-slate-800">{l.numCmdNav || "—"}</div>
+      <td className="px-3 py-2 min-w-[230px] max-md:block max-md:px-4 max-md:pt-3 max-md:pb-1">
+        <div className="num whitespace-nowrap font-medium text-slate-800">{l.numCmdNav || "—"}</div>
         <div className="font-medium text-slate-900 truncate max-w-[220px]" title={l.nomClient}>
           {l.nomClient || "—"}
         </div>
-        <div className="text-[11px] text-slate-500 truncate max-w-[220px]">{l.commercialNom}</div>
+        <div className="text-[11px] text-slate-500 truncate max-w-[220px]">{l.zone} · {l.commercialNom}</div>
+        <div className="text-[11px] text-slate-500">
+          Inscrite à <span className="num">{l.heureInscription || "—"}</span>
+          {l.inscriptionAvant16h !== null && (
+            <span className={l.inscriptionAvant16h ? "text-emerald-700" : "text-orange-700"}>
+              {l.inscriptionAvant16h ? " (avant 16h)" : " (après 16h)"}
+            </span>
+          )}
+        </div>
         {enRetard && (
           <span className="inline-block mt-1 rounded bg-red-100 text-red-700 text-[10px] font-semibold px-1.5 py-0.5">
             Retard {retardJours} j (prévue {l.dateLivraisonPrevue})
@@ -319,9 +310,9 @@ function Ligne({
         )}
       </td>
 
-      <td className="px-3 py-2 text-slate-600 text-xs">{l.zone}</td>
-
-      <td className="px-3 py-2">
+      <td className="px-3 py-2 max-md:grid max-md:grid-cols-[104px_1fr] max-md:items-center max-md:gap-2 max-md:px-4 max-md:py-1.5">
+        <span className="text-xs text-slate-500 md:hidden">Mouvement</span>
+        <div>
         <select
           value={mouvement}
           onChange={(e) => {
@@ -329,7 +320,7 @@ function Ligne({
             setMouvement(v);
             suivi.mutate({ expId: l.id, typeMouvement: v });
           }}
-          className="input py-1 px-2 text-xs w-40"
+          className="input py-1 px-2 text-xs w-32"
         >
           {MOUVEMENTS.map((m) => (
             <option key={m.value} value={m.value}>
@@ -337,9 +328,12 @@ function Ligne({
             </option>
           ))}
         </select>
+        </div>
       </td>
 
-      <td className="px-3 py-2">
+      <td className="px-3 py-2 max-md:grid max-md:grid-cols-[104px_1fr] max-md:items-center max-md:gap-2 max-md:px-4 max-md:py-1.5">
+        <span className="text-xs text-slate-500 md:hidden">Préparé la veille</span>
+        <div>
         <select
           value={prepare}
           onChange={(e) => {
@@ -348,7 +342,7 @@ function Ligne({
             suivi.mutate({ expId: l.id, prepareVeille: v });
           }}
           className={cn(
-            "input py-1 px-2 text-xs w-32",
+            "input py-1 px-2 text-xs w-28",
             prepare === "PREPARER" && "border-emerald-400 bg-emerald-50",
             prepare === "NON PREPARER" && "border-red-300 bg-red-50",
           )}
@@ -357,9 +351,12 @@ function Ligne({
           <option value="PREPARER">Préparé</option>
           <option value="NON PREPARER">Non préparé</option>
         </select>
+        </div>
       </td>
 
-      <td className="px-3 py-2 min-w-[230px]">
+      <td className="px-3 py-2 min-w-[250px] max-md:grid max-md:grid-cols-[104px_1fr] max-md:items-center max-md:gap-2 max-md:px-4 max-md:py-1.5">
+        <span className="text-xs text-slate-500 md:hidden">Chauffeur / véhicule</span>
+        <div>
         <div className="flex items-center gap-1.5">
           <select
             value={chauffeurId}
@@ -397,9 +394,42 @@ function Ligne({
         {aAttribuer && chauffeurId && (
           <div className="text-[10px] text-amber-700 mt-1">Choisi mais non validé</div>
         )}
+        </div>
       </td>
 
-      <td className="px-3 py-2 text-xs whitespace-nowrap">
+      <td className="px-3 py-2 max-md:grid max-md:grid-cols-[104px_1fr] max-md:items-center max-md:gap-2 max-md:px-4 max-md:py-1.5">
+        <span className="text-xs text-slate-500 md:hidden">Date réelle</span>
+        <div>
+        <input
+          type="date"
+          value={dateReelle}
+          onChange={(e) => changeDate(e.target.value)}
+          className="input py-1 px-2 text-xs w-32"
+        />
+        </div>
+      </td>
+
+      <td className="px-3 py-2 max-md:grid max-md:grid-cols-[104px_1fr] max-md:items-center max-md:gap-2 max-md:px-4 max-md:py-1.5">
+        <span className="text-xs text-slate-500 md:hidden">État</span>
+        <div>
+        <select
+          value={etat}
+          onChange={(e) => changeEtat(e.target.value as EtatLivraison)}
+          className={cn(
+            "input py-1 px-2 text-xs w-32",
+            etat === "livre" && "border-emerald-400 bg-emerald-50",
+            etat === "partiel" && "border-amber-400 bg-amber-50",
+            etat === "non_livre" && "border-red-300 bg-red-50",
+            etat === "recupere" && "border-blue-300 bg-blue-50",
+          )}
+        >
+          {ETATS.map((e) => (
+            <option key={e.value} value={e.value}>
+              {e.label}
+            </option>
+          ))}
+        </select>
+        <div className="mt-1.5 text-[11px]">
         {sorti ? (
           <div>
             <span className="inline-flex items-center gap-1 text-slate-700">
@@ -415,35 +445,8 @@ function Ligne({
         ) : (
           <span className="text-slate-500">{STATUT_SITE[l.statut] ?? l.statut}</span>
         )}
-      </td>
-
-      <td className="px-3 py-2">
-        <input
-          type="date"
-          value={dateReelle}
-          onChange={(e) => changeDate(e.target.value)}
-          className="input py-1 px-2 text-xs w-36"
-        />
-      </td>
-
-      <td className="px-3 py-2">
-        <select
-          value={etat}
-          onChange={(e) => changeEtat(e.target.value as EtatLivraison)}
-          className={cn(
-            "input py-1 px-2 text-xs w-28",
-            etat === "livre" && "border-emerald-400 bg-emerald-50",
-            etat === "partiel" && "border-amber-400 bg-amber-50",
-            etat === "non_livre" && "border-red-300 bg-red-50",
-            etat === "recupere" && "border-blue-300 bg-blue-50",
-          )}
-        >
-          {ETATS.map((e) => (
-            <option key={e.value} value={e.value}>
-              {e.label}
-            </option>
-          ))}
-        </select>
+        </div>
+        </div>
       </td>
     </tr>
   );

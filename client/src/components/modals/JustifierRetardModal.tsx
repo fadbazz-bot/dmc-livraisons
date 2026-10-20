@@ -79,7 +79,7 @@ export function JustifierRetardModal({ exp, open, onClose }: Props) {
         setCommentaire("");
         onClose();
       }}
-      title="⚠️ Justifier le retard"
+      title="Justifier le retard"
       description="Sélectionne un ou plusieurs motifs et précise si nécessaire."
       size="lg"
       footer={

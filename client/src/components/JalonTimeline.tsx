@@ -3,47 +3,49 @@ import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
 
 /**
- * Petite timeline horizontale des 7 jalons.
- * Pastille pleine = jalon franchi, contour seul = à venir.
+ * Progression de l'expédition en 4 jalons.
+ * Jalon franchi = plein ; le jalon en cours est cerclé ; en mode détaillé, libellé + heure.
  */
 export function JalonTimeline({ exp, compact = false }: { exp: Expedition; compact?: boolean }) {
+  const firstTodo = JALONS.findIndex((j) => !exp[j.field]);
   return (
-    <div className={cn("flex items-center", compact ? "gap-1" : "gap-2")}>
+    <ol className="flex items-start" aria-label="Progression de l'expédition">
       {JALONS.map((j, i) => {
         const ts = exp[j.field];
         const done = !!ts;
+        const current = i === firstTodo;
         const isLast = i === JALONS.length - 1;
         return (
-          <div key={j.key} className="flex items-center">
-            <div className="flex flex-col items-center min-w-[28px]">
-              <div
-                title={`${j.label}${ts ? ` — ${formatTime(ts)}` : " — à venir"}`}
+          <li key={j.key} className={cn("flex items-start", !isLast && "flex-1")}>
+            <div className="flex flex-col items-start">
+              <span
+                title={`${j.label}${ts ? `, ${formatTime(ts)}` : ", à venir"}`}
                 className={cn(
-                  "rounded-full transition-colors",
-                  compact ? "h-2.5 w-2.5" : "h-3 w-3",
-                  done
-                    ? "bg-brand-900 ring-2 ring-brand-200"
-                    : "bg-white border-2 border-slate-300",
+                  "mt-[3px] block h-2.5 w-2.5 rounded-full",
+                  done && "bg-brand-600",
+                  current && "bg-white ring-2 ring-brand-500",
+                  !done && !current && "bg-slate-200",
                 )}
               />
               {!compact && (
-                <span className="mt-1 text-[10px] font-medium text-slate-500 leading-none">
+                <span className={cn("mt-1.5 text-xs leading-tight", done ? "text-slate-700" : "text-slate-400")}>
                   {j.label}
+                  {done && <span className="block num text-[11px] text-slate-500">{formatTime(ts)}</span>}
                 </span>
               )}
             </div>
             {!isLast && (
-              <div
+              <span
                 className={cn(
-                  "h-[2px] flex-1 mx-0.5",
-                  compact ? "w-3" : "w-6",
-                  done && !!exp[JALONS[i + 1].field] ? "bg-brand-900" : "bg-slate-200",
+                  "mt-[7px] mx-1.5 h-px flex-1 min-w-[10px]",
+                  done && exp[JALONS[i + 1].field] ? "bg-brand-500" : "bg-slate-200",
                 )}
+                aria-hidden
               />
             )}
-          </div>
+          </li>
         );
       })}
-    </div>
+    </ol>
   );
 }

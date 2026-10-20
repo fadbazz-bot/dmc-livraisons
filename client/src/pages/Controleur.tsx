@@ -61,11 +61,8 @@ export default function ControleurPage() {
       <div className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
         <div className="flex items-center justify-between gap-3 mb-3">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-brand-900 text-white flex items-center justify-center">
-              <ShieldCheck className="h-5 w-5" />
-            </div>
             <div>
-              <h1 className="text-lg font-bold text-slate-900">Contrôle des justificatifs</h1>
+              <h1 className="text-xl font-semibold tracking-tight text-slate-900">Contrôle des justificatifs</h1>
               <p className="text-xs text-slate-500">
                 {user?.nom}
                 {mySite && ` — Site ${mySite}`} · {aValider.length} en attente
@@ -98,7 +95,7 @@ export default function ControleurPage() {
           </div>
         ) : filtered.length === 0 ? (
           <div className="card p-10 text-center text-sm text-slate-500">
-            🎉 Aucun justificatif en attente. Tout est validé.
+            Aucun justificatif en attente. Tout est validé.
           </div>
         ) : (
           <div className="space-y-2">
@@ -133,11 +130,11 @@ function ValidationRow({ exp, onClick }: { exp: Expedition; onClick: () => void 
             </span>
           </div>
           <div className="mt-1 text-xs text-slate-500 flex items-center gap-3 flex-wrap">
-            <span>📍 {exp.zone}</span>
-            {exp.plaque && <span>🚗 {exp.plaque}</span>}
-            {exp.numeroBL && <span>📄 {exp.numeroBL}</span>}
+            <span>{exp.zone}</span>
+            {exp.plaque && <span className="num">{exp.plaque}</span>}
+            {exp.numeroBL && <span>{exp.numeroBL}</span>}
             {exp.dureeService !== null && (
-              <span className="text-red-600 font-medium">⏱ {formatDuree(exp.dureeService)}</span>
+              <span className="text-red-600 font-medium">{formatDuree(exp.dureeService)}</span>
             )}
             <span>{formatRelative(exp.tSortieSite)}</span>
           </div>
@@ -145,7 +142,7 @@ function ValidationRow({ exp, onClick }: { exp: Expedition; onClick: () => void 
         <StatutBadge statut={exp.statut} />
       </div>
       <div className="mt-2 rounded-lg bg-slate-50 border border-slate-100 p-2">
-        <div className="text-[10px] uppercase tracking-wider text-slate-500">Motifs déclarés</div>
+        <div className="text-[11px]r text-slate-500">Motifs déclarés</div>
         <div className="text-sm text-slate-900 font-medium">
           {exp.motifRetard || <span className="italic text-slate-400">—</span>}
         </div>

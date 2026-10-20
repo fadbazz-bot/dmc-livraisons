@@ -38,11 +38,8 @@ export default function DashboardPage() {
       <div className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-brand-900 text-white flex items-center justify-center">
-              <BarChart3 className="h-5 w-5" />
-            </div>
             <div>
-              <h1 className="text-lg font-bold text-slate-900">Dashboard KPI</h1>
+              <h1 className="text-xl font-semibold tracking-tight text-slate-900">Dashboard KPI</h1>
               <p className="text-xs text-slate-500">Performance globale livraisons</p>
             </div>
           </div>
@@ -121,7 +118,7 @@ export default function DashboardPage() {
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
-                    <thead className="text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                    <thead className="text-xs font-mediumr text-slate-500 border-b border-slate-200">
                       <tr>
                         <th className="px-3 py-2 text-left">Zone</th>
                         <th className="px-3 py-2 text-right">Total</th>
@@ -163,7 +160,7 @@ export default function DashboardPage() {
                   <h3 className="text-sm font-semibold text-slate-900">Top motifs de retard</h3>
                 </div>
                 {kpi.topMotifs.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center py-6">Aucun retard 🎉</p>
+                  <p className="text-sm text-slate-500 text-center py-6">Aucun retard </p>
                 ) : (
                   <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
@@ -193,7 +190,7 @@ export default function DashboardPage() {
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="min-w-full text-sm">
-                      <thead className="text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                      <thead className="text-xs font-mediumr text-slate-500 border-b border-slate-200">
                         <tr>
                           <th className="px-2 py-2 text-left">#</th>
                           <th className="px-2 py-2 text-left">Responsable</th>
@@ -205,7 +202,7 @@ export default function DashboardPage() {
                         {kpi.classementResp.slice(0, 10).map((r, i) => (
                           <tr key={r.email}>
                             <td className="px-2 py-2 font-medium">
-                              {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : i + 1}
+                              {i + 1}
                             </td>
                             <td className="px-2 py-2 font-medium text-slate-900">{r.nom}</td>
                             <td className="px-2 py-2 text-right font-mono text-xs">{r.total}</td>
@@ -248,7 +245,7 @@ function Card({
   return (
     <div className="card p-4">
       <div className="flex items-start justify-between gap-2">
-        <div className="text-[11px] uppercase tracking-wider font-medium text-slate-500">
+        <div className="text-xs font-medium text-slate-500">
           {title}
         </div>
         <Icon className="h-4 w-4 text-slate-400" />
