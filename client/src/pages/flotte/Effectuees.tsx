@@ -1,6 +1,9 @@
 import { useMemo, useState } from "react";
+import { BarreFiltres } from "@/components/FiltresPortee";
+import { useFiltres } from "@/lib/useFiltres";
+import { periodeDepuisPreset } from "@/lib/periode";
 import { useQuery } from "@tanstack/react-query";
-import { Search, Pencil, Calendar } from "lucide-react";
+import { Search, Pencil } from "lucide-react";
 import { api } from "@/api/appsScript";
 import type { LivraisonFlotte } from "@/types/domain";
 import { FlotteLayout } from "@/components/FlotteLayout";
@@ -12,17 +15,13 @@ import { cn, includesLower } from "@/lib/cn";
  * Édition motif / commentaire / état possible par le responsable flotte.
  */
 export default function EffectueesPage() {
-  const today = new Date().toISOString().slice(0, 10);
-  const [dateDebut, setDateDebut] = useState(
-    new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
-  );
-  const [dateFin, setDateFin] = useState(today);
+  const f = useFiltres(periodeDepuisPreset("30"));
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<LivraisonFlotte | null>(null);
 
   const { data: livraisons = [], isLoading, error } = useQuery({
-    queryKey: ["flotte-livraisons", "effectuees", dateDebut, dateFin],
-    queryFn: () => api.flotteLivraisons.list({ dateDebut, dateFin }),
+    queryKey: ["flotte-livraisons", "effectuees", f.dateDebut, f.dateFin, f.site, f.zone],
+    queryFn: () => api.flotteLivraisons.list(f.params),
   });
 
   const effectuees = useMemo(() => livraisons.filter((l) => !!l.tSortieSite), [livraisons]);
@@ -43,9 +42,7 @@ export default function EffectueesPage() {
   return (
     <FlotteLayout
       subtitle={`Livraisons effectuées · ${effectuees.length} sur la période`}
-      rightSlot={
-        <DateRange dateDebut={dateDebut} dateFin={dateFin} onDebut={setDateDebut} onFin={setDateFin} />
-      }
+      rightSlot={<BarreFiltres f={f} />}
     >
       <div className="space-y-4">
         <div className="relative">
@@ -150,25 +147,4 @@ function EtatBadge({ etat }: { etat: string }) {
   };
   const cfg = map[etat] ?? { label: etat, cls: "badge-neutral" };
   return <span className={cn(cfg.cls, "text-[10px]")}>{cfg.label}</span>;
-}
-
-export function DateRange({
-  dateDebut,
-  dateFin,
-  onDebut,
-  onFin,
-}: {
-  dateDebut: string;
-  dateFin: string;
-  onDebut: (v: string) => void;
-  onFin: (v: string) => void;
-}) {
-  return (
-    <div className="flex items-center gap-1.5 text-sm">
-      <Calendar className="h-4 w-4 text-slate-400" />
-      <input type="date" value={dateDebut} onChange={(e) => onDebut(e.target.value)} className="input py-1.5 px-2 w-36" />
-      <span className="text-slate-400">→</span>
-      <input type="date" value={dateFin} onChange={(e) => onFin(e.target.value)} className="input py-1.5 px-2 w-36" />
-    </div>
-  );
 }

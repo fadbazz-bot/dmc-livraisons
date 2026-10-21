@@ -90,21 +90,19 @@ export function FlotteLayout({ children, subtitle, rightSlot }: Props) {
         title="Flotte interne"
         subtitle={subtitle ?? "Suivi des livraisons internes DMC"}
         actions={
-          <>
-            {rightSlot}
-            <button
-              type="button"
-              onClick={handleSync}
-              className="btn-outline"
-              title="Recharge les données depuis Google Sheets"
-              aria-label="Synchroniser"
-            >
-              <RefreshCw className="h-4 w-4" />
-              <span className="hidden sm:inline">Synchroniser</span>
-            </button>
-          </>
+          <button
+            type="button"
+            onClick={handleSync}
+            className="btn-outline"
+            title="Recharge les données depuis Google Sheets"
+            aria-label="Synchroniser"
+          >
+            <RefreshCw className="h-4 w-4" />
+            <span className="hidden sm:inline">Synchroniser</span>
+          </button>
         }
       >
+        {rightSlot && <div className="flex flex-wrap items-center gap-2">{rightSlot}</div>}
         <nav className="-mx-1 flex gap-1 overflow-x-auto px-1" aria-label="Sections flotte">
           {SECTIONS.map((s) => {
             const active = location === s.to || (s.to === "/flotte/aujourdhui" && location === "/flotte");

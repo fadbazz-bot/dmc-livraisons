@@ -1,4 +1,7 @@
 import { useState } from "react";
+import { BarreFiltres } from "@/components/FiltresPortee";
+import { useFiltres } from "@/lib/useFiltres";
+import { periodeDepuisPreset } from "@/lib/periode";
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart,
@@ -15,7 +18,6 @@ import {
 import { Target, Clock, Truck, Database, AlertCircle, TrendingUp } from "lucide-react";
 import { api } from "@/api/appsScript";
 import { FlotteLayout } from "@/components/FlotteLayout";
-import { DateRange } from "@/pages/flotte/Effectuees";
 import { formatDuree, kpiColorClass } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
@@ -28,23 +30,17 @@ import { cn } from "@/lib/cn";
  * - Répartition par dépôt (bar chart)
  */
 export default function KpiFlottePage() {
-  const today = new Date().toISOString().slice(0, 10);
-  const [dateDebut, setDateDebut] = useState(
-    new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
-  );
-  const [dateFin, setDateFin] = useState(today);
+  const f = useFiltres(periodeDepuisPreset("30"));
 
   const { data: kpi, isLoading, error } = useQuery({
-    queryKey: ["flotte-kpi", dateDebut, dateFin],
-    queryFn: () => api.flotteLivraisons.kpi({ dateDebut, dateFin }),
+    queryKey: ["flotte-kpi", f.dateDebut, f.dateFin, f.site, f.zone],
+    queryFn: () => api.flotteLivraisons.kpi(f.params),
   });
 
   return (
     <FlotteLayout
       subtitle="Indicateurs de performance flotte interne DMC"
-      rightSlot={
-        <DateRange dateDebut={dateDebut} dateFin={dateFin} onDebut={setDateDebut} onFin={setDateFin} />
-      }
+      rightSlot={<BarreFiltres f={f} />}
     >
       {isLoading ? (
         <div className="card p-6 text-center text-sm text-slate-500">Chargement…</div>

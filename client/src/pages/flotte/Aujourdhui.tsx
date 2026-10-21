@@ -1,4 +1,7 @@
 import { useMemo, useState } from "react";
+import { BarreFiltres } from "@/components/FiltresPortee";
+import { useFiltres } from "@/lib/useFiltres";
+import { periodeDepuisPreset } from "@/lib/periode";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Lock, Unlock, Search } from "lucide-react";
 import { api } from "@/api/appsScript";
@@ -58,13 +61,14 @@ function joursEntre(dateIso: string, aujourdhui: string): number {
 export default function AujourdhuiPage() {
   const today = new Date().toISOString().slice(0, 10);
   const [search, setSearch] = useState("");
+  const f = useFiltres(periodeDepuisPreset("today"));
 
   // Fenêtre de 45 jours (sur T0) pour retrouver les retards non soldés
   const dateDebut = new Date(Date.now() - 45 * 86400000).toISOString().slice(0, 10);
 
   const { data: livraisons = [], isLoading, error } = useQuery({
-    queryKey: ["flotte-livraisons", "aujourdhui", dateDebut, today],
-    queryFn: () => api.flotteLivraisons.list({ dateDebut, dateFin: today }),
+    queryKey: ["flotte-livraisons", "aujourdhui", dateDebut, today, f.site, f.zone],
+    queryFn: () => api.flotteLivraisons.list({ dateDebut, dateFin: today, site: f.site || undefined, magasin: f.zone || undefined }),
   });
 
   const { data: chauffeurs = [] } = useQuery({
@@ -122,6 +126,8 @@ export default function AujourdhuiPage() {
           />
         </div>
 
+        <BarreFiltres f={f} periode={false} />
+
         <Legende />
 
         {isLoading ? (
@@ -131,7 +137,7 @@ export default function AujourdhuiPage() {
             {error instanceof Error ? error.message : "Erreur"}
           </div>
         ) : (
-          (["Dakar", "Diamniadio"] as const).map((site) => (
+          (["Dakar", "Diamniadio"] as const).filter((s) => !f.site || s === f.site).map((site) => (
             <TableauSite key={site} site={site} lignes={parSite[site]} chauffeurs={chauffeurs} today={today} />
           ))
         )}

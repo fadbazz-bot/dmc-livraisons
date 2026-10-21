@@ -4373,6 +4373,11 @@ function getLivraisonsFlotte(params) {
       return d >= params.dateDebut && d <= params.dateFin;
     });
   }
+  if (params && params.site) filtered = filtered.filter(e => zoneToSite(e.ZONE) === params.site);
+  if (params && params.magasin) {
+    const catMag = ncCategorieZone_(params.magasin);
+    filtered = filtered.filter(e => ncCategorieZone_(e.ZONE) === catMag);
+  }
   if (params && params.chauffeurId) filtered = filtered.filter(e => e.CHAUFFEUR_FLOTTE_ID === params.chauffeurId);
   if (params && params.statut) filtered = filtered.filter(e => e.STATUT === params.statut);
 
@@ -4574,7 +4579,11 @@ function getKpiFlotte(params) {
   const dateDebut = params && params.dateDebut ? params.dateDebut : new Date().toISOString().slice(0, 10);
   const dateFin   = params && params.dateFin   ? params.dateFin   : dateDebut;
 
-  const livraisons = getLivraisonsFlotte({ dateDebut, dateFin });
+  const livraisons = getLivraisonsFlotte({
+    dateDebut, dateFin,
+    site: params && params.site ? params.site : undefined,
+    magasin: params && params.magasin ? params.magasin : undefined,
+  });
 
   const totalPlanifiees = livraisons.length;
   const terminees = livraisons.filter(l => l.tSortieSite);

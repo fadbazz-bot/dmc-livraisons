@@ -1,6 +1,7 @@
 import { Calendar, Lock } from "lucide-react";
 import { PRESETS_PERIODE, periodeDepuisPreset, type Periode, type PresetPeriode } from "@/lib/periode";
 import { SITES, ZONES_MAGASIN, type Portee } from "@/lib/portee";
+import type { Filtres } from "@/lib/useFiltres";
 import { cn } from "@/lib/cn";
 
 /** Sélecteur de période : raccourcis (aujourd'hui, 7 j, ce mois…) + dates précises. */
@@ -103,5 +104,15 @@ export function SiteMagasinSelect({
         </select>
       )}
     </>
+  );
+}
+
+/** Barre complète : site + magasin + période (la période est facultative). */
+export function BarreFiltres({ f, periode = true, className }: { f: Filtres; periode?: boolean; className?: string }) {
+  return (
+    <div className={cn("flex flex-wrap items-center gap-2", className)}>
+      <SiteMagasinSelect portee={f.portee} site={f.site} zone={f.zone} onSite={f.setSite} onZone={f.setZone} />
+      {periode && <PeriodeSelect value={f.periode} onChange={f.setPeriode} />}
+    </div>
   );
 }

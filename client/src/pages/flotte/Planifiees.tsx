@@ -1,4 +1,7 @@
 import { useMemo, useState } from "react";
+import { BarreFiltres } from "@/components/FiltresPortee";
+import { useFiltres } from "@/lib/useFiltres";
+import type { Periode } from "@/lib/periode";
 import { useQuery } from "@tanstack/react-query";
 import { Table2, Calendar, Search } from "lucide-react";
 import { api } from "@/api/appsScript";
@@ -19,19 +22,18 @@ export default function PlanifieesPage() {
   const [search, setSearch] = useState("");
   const [agendaDate, setAgendaDate] = useState<{ date: string; items: LivraisonFlotte[] } | null>(null);
 
-  // Plage de date : 60 jours autour d'aujourd'hui (30 avant + 30 après)
-  const { dateDebut, dateFin } = useMemo(() => {
-    const today = new Date();
-    const start = new Date(today.getTime() - 30 * 86400000);
-    const end = new Date(today.getTime() + 30 * 86400000);
-    const fmt = (d: Date) =>
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    return { dateDebut: fmt(start), dateFin: fmt(end) };
+  // Par défaut : 60 jours autour d'aujourd'hui (30 avant + 30 après), modifiable
+  const fenetreInitiale = useMemo<Periode>(() => {
+    const today = Date.now();
+    const jour = (t: number) => new Date(t).toISOString().slice(0, 10);
+    return { preset: "perso", debut: jour(today - 30 * 86400000), fin: jour(today + 30 * 86400000) };
   }, []);
+  const f = useFiltres(fenetreInitiale);
+  const { dateDebut, dateFin } = f;
 
   const { data: livraisons = [], isLoading, error } = useQuery({
-    queryKey: ["flotte-livraisons", "planifiees", dateDebut, dateFin],
-    queryFn: () => api.flotteLivraisons.list({ dateDebut, dateFin }),
+    queryKey: ["flotte-livraisons", "planifiees", dateDebut, dateFin, f.site, f.zone],
+    queryFn: () => api.flotteLivraisons.list(f.params),
   });
 
   // Tableau : on ne montre que celles non encore livrées (à action)
@@ -84,6 +86,7 @@ export default function PlanifieesPage() {
       }
     >
       <div className="space-y-4">
+        <BarreFiltres f={f} />
         {view === "tableau" && (
           <>
             <div className="relative">

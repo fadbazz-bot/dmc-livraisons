@@ -529,6 +529,8 @@ export const flotteLivraisons = {
     statut?: string;
     conformite?: "ok" | "non_conforme";
     etat?: EtatLivraison;
+    site?: string;
+    magasin?: string;
   } = {}) => apiGet<LivraisonFlotte[]>("getLivraisonsFlotte", filters as Record<string, ParamValue>),
 
   updateSuivi: (input: {
@@ -551,7 +553,7 @@ export const flotteLivraisons = {
   assignChauffeur: (input: { expId: string; chauffeurId?: string; valider?: boolean }) =>
     apiPost<{ ok: true; chauffeurNom: string; plaque: string }>("assignChauffeurLivraison", input),
 
-  kpi: (filters: { dateDebut: string; dateFin: string }) =>
+  kpi: (filters: { dateDebut: string; dateFin: string; site?: string; magasin?: string }) =>
     apiGet<KpiFlotte>("getKpiFlotte", filters),
 
   /**

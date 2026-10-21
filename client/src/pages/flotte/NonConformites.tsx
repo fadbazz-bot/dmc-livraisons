@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
+import { BarreFiltres } from "@/components/FiltresPortee";
+import { useFiltres } from "@/lib/useFiltres";
+import { periodeDepuisPreset } from "@/lib/periode";
 import { useQuery } from "@tanstack/react-query";
 import { Pencil, AlertTriangle } from "lucide-react";
 import { api } from "@/api/appsScript";
 import type { LivraisonFlotte } from "@/types/domain";
 import { FlotteLayout } from "@/components/FlotteLayout";
 import { EditSuiviModal } from "@/components/modals/EditSuiviModal";
-import { DateRange } from "@/pages/flotte/Effectuees";
 import { cn } from "@/lib/cn";
 import { formatDateTime } from "@/lib/format";
 
@@ -14,16 +16,12 @@ import { formatDateTime } from "@/lib/format";
  * Le responsable flotte clique sur la ligne pour justifier (motif + commentaire).
  */
 export default function NonConformitesPage() {
-  const today = new Date().toISOString().slice(0, 10);
-  const [dateDebut, setDateDebut] = useState(
-    new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
-  );
-  const [dateFin, setDateFin] = useState(today);
+  const f = useFiltres(periodeDepuisPreset("30"));
   const [editing, setEditing] = useState<LivraisonFlotte | null>(null);
 
   const { data: livraisons = [], isLoading, error } = useQuery({
-    queryKey: ["flotte-livraisons", "non-conformes", dateDebut, dateFin],
-    queryFn: () => api.flotteLivraisons.list({ dateDebut, dateFin, conformite: "non_conforme" }),
+    queryKey: ["flotte-livraisons", "non-conformes", f.dateDebut, f.dateFin, f.site, f.zone],
+    queryFn: () => api.flotteLivraisons.list({ ...f.params, conformite: "non_conforme" }),
   });
 
   const sansJustif = useMemo(
@@ -34,9 +32,7 @@ export default function NonConformitesPage() {
   return (
     <FlotteLayout
       subtitle={`${livraisons.length} non-conformités · ${sansJustif} sans justification`}
-      rightSlot={
-        <DateRange dateDebut={dateDebut} dateFin={dateFin} onDebut={setDateDebut} onFin={setDateFin} />
-      }
+      rightSlot={<BarreFiltres f={f} />}
     >
       <div className="space-y-4">
         <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-900 flex items-start gap-2">
