@@ -37,7 +37,7 @@ function consigne(n: number): string {
 }
 
 /**
- * Photos du chargement, prises par le livreur AVANT de se présenter au poste de garde.
+ * Photos du chargement, prises par le responsable magasin AVANT de se présenter au poste de garde.
  * Chaque photo est envoyée tout de suite vers Google Drive (dossier de l'expédition) :
  * même si le réseau coupe ensuite, ce qui est parti est sauvegardé. Preuve en cas de
  * contestation "livraison incomplète".
@@ -140,7 +140,7 @@ export function PhotosChargementModal({ exp, open, onClose }: Props) {
       open={open}
       onClose={onClose}
       title="Photos du chargement"
-      description="À faire avant le poste de garde : elles protègent le livreur en cas de contestation."
+      description="À faire avant le poste de garde : elles te protègent si le client conteste la livraison."
       size="lg"
       footer={
         <>

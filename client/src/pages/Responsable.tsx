@@ -150,9 +150,8 @@ export default function ResponsablePage() {
           </div>
         ) : (
           <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 mb-4 text-sm text-amber-900">
-            Une fois le véhicule chargé, le livreur <strong>photographie tous les articles</strong> avec ce
-            téléphone, <strong>avant</strong> de passer au poste de garde. Sans photos, le garde ne peut pas
-            valider la sortie.
+            Une fois le véhicule chargé, <strong>photographie tous les articles</strong> avant que le véhicule
+            passe au poste de garde. Sans photos, le garde ne peut pas valider la sortie.
           </div>
         )}
 

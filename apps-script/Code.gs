@@ -34,7 +34,7 @@ const CONFIG = {
   EMAIL_ADMIN:    "Fadell.bazzouni@dmcsen.com",
   DELAI_MAX_MIN:  30,   // seuil retard en minutes
   // ── Photos de chargement (Google Drive) ──
-  // Les livreurs photographient le véhicule chargé AVANT le poste de garde.
+  // Le responsable magasin photographie le véhicule chargé AVANT le poste de garde.
   // Les photos vont dans Drive : <racine> / aaaa-mm / <N° commande> - <client> - <N° expédition>
   DRIVE_ROOT_NAME:          "DMC Livraisons - Photos chargement", // dossier racine (créé au 1er usage)
   DRIVE_ROOT_FOLDER_ID:     "",   // optionnel : ID d'un dossier existant à utiliser comme racine
@@ -1953,7 +1953,7 @@ function jalonSortieSite(params) {
     throw new Error("Au moins une photo du véhicule chargé est obligatoire");
   }
 
-  // Photos de chargement (prises par le livreur avant le poste de garde) :
+  // Photos de chargement (prises par le responsable magasin avant le poste de garde) :
   // obligatoires, sauf dérogation motivée du garde (tracée dans EVENEMENTS).
   if (CONFIG.PHOTOS_CHARGEMENT_OBLIGATOIRES) {
     const nbPhc = countPhotosChargement_(expId);
@@ -1961,7 +1961,7 @@ function jalonSortieSite(params) {
       const derog = String(derogationMotif || "").trim();
       if (!derog) {
         throw new Error("Photos de chargement manquantes (" + nbPhc + "/" + CONFIG.PHOTOS_CHARGEMENT_MIN +
-          ") — le livreur doit photographier les articles chargés avant la sortie.");
+          ") — le responsable magasin doit photographier les articles chargés avant la sortie du site.");
       }
       addEvenement(expId, "DEROGATION_PHOTOS", acteurEmail, acteurNom, now(),
         "Sortie sans photos de chargement suffisantes (" + nbPhc + "/" + CONFIG.PHOTOS_CHARGEMENT_MIN + ") — motif : " + derog);

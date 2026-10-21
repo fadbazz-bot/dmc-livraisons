@@ -110,8 +110,8 @@ export function SortieSiteModal({ exp, open, onClose }: Props) {
             <div className="flex items-start gap-2.5">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>
-                <strong>Photos de chargement manquantes</strong> ({nbChargement}/{PHOTOS_MIN}). Renvoie le livreur
-                les prendre auprès du responsable magasin. Sortie sans photos uniquement en dernier recours :
+                <strong>Photos de chargement manquantes</strong> ({nbChargement}/{PHOTOS_MIN}). Renvoie le véhicule
+                auprès du responsable magasin pour les photos de chargement. Sortie sans photos uniquement en dernier recours :
                 le motif sera tracé.
               </span>
             </div>
