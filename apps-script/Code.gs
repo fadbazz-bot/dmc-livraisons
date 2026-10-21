@@ -274,6 +274,13 @@ function handleRequest(e) {
       // Médias (photos plaque, permis, etc. dans la feuille MEDIAS)
       "getMedias":              () => getMedias(params),
       "addMedia":               () => addMedia(params),
+      // Administration — nettoyage des données (admin uniquement, corbeille de sécurité)
+      "adminCompterDonnees":    () => adminCompterDonnees(params),
+      "adminListerDonnees":     () => adminListerDonnees(params),
+      "adminSupprimerLignes":   () => adminSupprimerLignes(params),
+      "adminListerCorbeille":   () => adminListerCorbeille(params),
+      "adminRestaurer":         () => adminRestaurer(params),
+      "adminViderCorbeille":    () => adminViderCorbeille(params),
       // Photos de chargement → Google Drive
       "addPhotoChargement":     () => addPhotoChargement(params),
       "getPhotosChargement":    () => getPhotosChargement(params),
@@ -344,7 +351,7 @@ function getSheet(name) {
 function ensureSheetsExist() {
   const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
   const needed = [
-    "COMMANDES","EXPEDITIONS","UTILISATEURS","MOTIFS_RETARD","EVENEMENTS","MEDIAS","PHOTOS_CHARGEMENT",
+    "COMMANDES","EXPEDITIONS","UTILISATEURS","MOTIFS_RETARD","EVENEMENTS","MEDIAS","PHOTOS_CHARGEMENT","CORBEILLE",
     // Module flotte interne
     "FLOTTE_CHAUFFEURS","CLIENTS_LIVRAISON_INTERNE","MOTIFS_RETARD_FLOTTE",
     "SUIVI_LIVRAISON_INTERNE","HEURE_DEPART_FLOTTE",
@@ -367,6 +374,8 @@ function seedSheetHeaders(sh, name) {
   switch (name) {
     case "MEDIAS":
       headers = ["ID","ExpId","Type","DataUrl","ActeurEmail","Timestamp"]; break;
+    case "CORBEILLE":
+      headers = ["ID","Lot","SupprimeLe","SupprimePar","Table","LigneId","Donnees"]; break;
     case "PHOTOS_CHARGEMENT":
       headers = ["ID","ExpId","Type","FileId","FileUrl","FolderId","FolderUrl",
                  "Nom","ActeurEmail","ActeurNom","Timestamp","Supprime"]; break;
@@ -1502,6 +1511,312 @@ function getMedias(params) {
     id: m.ID, expId: m.EXP_ID, type: m.TYPE,
     dataUrl: m.DATA_URL, acteurEmail: m.ACTEUR_EMAIL, timestamp: m.TIMESTAMP,
   }));
+}
+
+// ─── ADMINISTRATION — NETTOYAGE DES DONNÉES ───────────────────────────────────
+//
+// Permet à l'admin de lister les lignes de chaque onglet, de les filtrer (côté écran) et de
+// supprimer une sélection pour repartir sur une base propre.
+// Sécurités : admin uniquement, phrase de confirmation "SUPPRIMER", et CORBEILLE : toute ligne
+// supprimée y est copiée (restaurable tant que la corbeille n'est pas vidée).
+// Supprimer une expédition supprime aussi ses événements, médias, photos (dossier Drive mis à la
+// corbeille Drive) et son suivi flotte ; la commande parente part avec sa dernière expédition.
+
+const ADMIN_TABLES = [
+  "COMMANDES", "EXPEDITIONS", "EVENEMENTS", "MEDIAS", "PHOTOS_CHARGEMENT",
+  "SUIVI_LIVRAISON_INTERNE", "HEURE_DEPART_FLOTTE",
+  "FLOTTE_CHAUFFEURS", "CLIENTS_LIVRAISON_INTERNE", "MOTIFS_RETARD_FLOTTE", "MOTIFS_RETARD",
+  "UTILISATEURS",
+];
+const ADMIN_LIMITE_LISTE = 3000;
+const ADMIN_LIMITE_SUPPRESSION = 5000;
+
+function adminTableOk_(t) {
+  const table = String(t || "").toUpperCase();
+  if (ADMIN_TABLES.indexOf(table) === -1) throw new Error("Onglet non autorisé : " + t);
+  return table;
+}
+
+/** Valeur de cellule sérialisable (dates → ISO, texte long tronqué pour l'affichage). */
+function adminCell_(v, tronquer) {
+  if (v instanceof Date) return v.toISOString();
+  if (typeof v === "string" && tronquer && v.length > 160) return v.substring(0, 160) + "… (" + v.length + " car.)";
+  return v;
+}
+
+/** Lit toutes les valeurs d'un onglet. MEDIAS : la colonne DataUrl (énorme) n'est jamais lue. */
+function adminLireOnglet_(name) {
+  const sh = getSheet(name);
+  if (!sh) throw new Error("Onglet introuvable : " + name);
+  const last = sh.getLastRow(), cols = sh.getLastColumn();
+  if (last < 1) return { sh: sh, headers: [], rows: [] };
+  if (name === "MEDIAS") {
+    const a = sh.getRange(1, 1, last, 3).getValues();
+    const b = cols >= 5 ? sh.getRange(1, 5, last, Math.min(2, cols - 4)).getValues() : a.map(function() { return []; });
+    const all = a.map(function(r, i) { return r.concat(b[i]); });
+    return { sh: sh, headers: all[0], rows: all.slice(1), skipDataUrl: true };
+  }
+  const all = sh.getRange(1, 1, last, cols).getValues();
+  return { sh: sh, headers: all[0], rows: all.slice(1) };
+}
+
+function adminCompterDonnees(params) {
+  assertAdmin(params.acteurEmail);
+  const out = {};
+  ADMIN_TABLES.forEach(function(t) {
+    const sh = getSheet(t);
+    out[t] = sh ? Math.max(0, sh.getLastRow() - 1) : 0;
+  });
+  const c = getSheet("CORBEILLE");
+  out.CORBEILLE = c ? Math.max(0, c.getLastRow() - 1) : 0;
+  return { ok: true, comptes: out };
+}
+
+/** Lignes d'un onglet, les plus récentes d'abord (max 3000). Le filtrage se fait à l'écran. */
+function adminListerDonnees(params) {
+  assertAdmin(params.acteurEmail);
+  const table = adminTableOk_(params.table);
+  const lu = adminLireOnglet_(table);
+  let headers = lu.headers.map(String);
+  let rows = lu.rows.map(function(r) { return r.slice(); });
+
+  // Expéditions : on ajoute le N° de commande et le client (utile pour chercher / filtrer)
+  if (table === "EXPEDITIONS") {
+    const cmds = getCmdsCache();
+    const iCmd = COL_EXP.CMD_ID - 1;
+    headers = ["N° commande", "Client"].concat(headers);
+    rows = rows.map(function(r) {
+      const c = cmds[r[iCmd]] || {};
+      return [c.NUM_CMD_NAV || "", c.NOM_CLIENT || ""].concat(r);
+    });
+  }
+  const ajout = table === "EXPEDITIONS" ? 2 : 0;
+  const total = rows.length;
+  const out = [];
+  for (let i = rows.length - 1; i >= 0 && out.length < ADMIN_LIMITE_LISTE; i--) {
+    const r = rows[i];
+    const id = String(r[ajout] === undefined ? "" : r[ajout]);
+    if (!id) continue;
+    out.push({ id: id, cells: r.map(function(v) { return adminCell_(v, true); }) });
+  }
+  return { ok: true, table: table, headers: headers, idCol: ajout, rows: out, total: total, tronque: total > out.length };
+}
+
+/** Ajoute des lignes à la CORBEILLE. rows = [{table, id, values}] */
+function adminSauverCorbeille_(lot, admin, ts, rows) {
+  if (!rows.length) return;
+  const sh = getSheet("CORBEILLE");
+  const data = rows.map(function(r) {
+    let json = JSON.stringify(r.values.map(function(v) { return v instanceof Date ? v.toISOString() : v; }));
+    if (json.length > 49000) {
+      // cellule trop longue (data URL d'image) : on garde le reste, on tronque les gros champs
+      json = JSON.stringify(r.values.map(function(v) {
+        v = v instanceof Date ? v.toISOString() : v;
+        return typeof v === "string" && v.length > 1500 ? "[tronqué — " + v.length + " caractères]" : v;
+      }));
+    }
+    return [genId(), lot, ts, admin.EMAIL, r.table, r.id, json];
+  });
+  sh.getRange(sh.getLastRow() + 1, 1, data.length, 7).setValues(data);
+}
+
+/** Supprime des lignes (numéros de ligne 1-based) par blocs consécutifs, de bas en haut. */
+function adminSupprimerNumLignes_(sh, numLignes) {
+  const tri = numLignes.slice().sort(function(a, b) { return b - a; });
+  let i = 0;
+  while (i < tri.length) {
+    let debut = tri[i], n = 1;
+    while (i + n < tri.length && tri[i + n] === debut - n) n++;
+    sh.deleteRows(debut - n + 1, n);
+    i += n;
+  }
+}
+
+/**
+ * Supprime les lignes dont la 1re colonne (ID) est dans `ids`, avec cascade pour
+ * COMMANDES / EXPEDITIONS. Sauvegarde tout dans CORBEILLE.
+ */
+function adminSupprimerLignes(params) {
+  const admin = assertAdmin(params.acteurEmail);
+  if (String(params.confirmation || "") !== "SUPPRIMER") throw new Error('Confirmation manquante : tapez "SUPPRIMER".');
+  const table = adminTableOk_(params.table);
+  let ids = params.ids;
+  if (!Array.isArray(ids) || !ids.length) throw new Error("Aucune ligne sélectionnée");
+  if (ids.length > ADMIN_LIMITE_SUPPRESSION) throw new Error("Maximum " + ADMIN_LIMITE_SUPPRESSION + " lignes par suppression.");
+  ids = ids.map(String);
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const ts = now();
+    const lot = genId();
+    const rapport = {};
+    const aSauver = [];
+    const idSet = function(arr) { const o = {}; arr.forEach(function(x) { o[x] = true; }); return o; };
+
+    // ── Plan : { nomOnglet: { numeros: [...], lignes: [{id, values}] } }
+    const plan = {};
+    const planifier = function(name, predicat) {
+      const lu = adminLireOnglet_(name);
+      const num = [];
+      lu.rows.forEach(function(r, i) {
+        if (!predicat(r)) return;
+        num.push(i + 2);
+        // MEDIAS : la colonne DataUrl (image) n'est pas lue → on réserve sa place pour garder l'alignement à la restauration
+        const vals = name === "MEDIAS" ? r.slice(0, 3).concat(["[image non sauvegardée]"], r.slice(3)) : r;
+        aSauver.push({ table: name, id: String(r[0]), values: vals });
+      });
+      plan[name] = { sh: lu.sh, num: num };
+      rapport[name] = (rapport[name] || 0) + num.length;
+    };
+
+    let expIds = [], cmdIdsTouches = [];
+    if (table === "COMMANDES") {
+      const cmdSet = idSet(ids);
+      const exps = sheetToObjects(getSheet("EXPEDITIONS"), COL_EXP);
+      expIds = exps.filter(function(e) { return cmdSet[e.CMD_ID]; }).map(function(e) { return e.ID; });
+      cmdIdsTouches = ids;
+    } else if (table === "EXPEDITIONS") {
+      expIds = ids;
+      const sel = idSet(ids);
+      cmdIdsTouches = sheetToObjects(getSheet("EXPEDITIONS"), COL_EXP)
+        .filter(function(e) { return sel[e.ID]; }).map(function(e) { return e.CMD_ID; });
+    }
+
+    let foldersDrive = [], filesDrive = [];
+
+    if (table === "COMMANDES" || table === "EXPEDITIONS") {
+      const expSet = idSet(expIds);
+      planifier("EXPEDITIONS", function(r) { return expSet[String(r[0])]; });
+      planifier("EVENEMENTS", function(r) { return expSet[String(r[COL_EVT.EXP_ID - 1])]; });
+      planifier("MEDIAS", function(r) { return expSet[String(r[COL_MED.EXP_ID - 1])]; });
+      planifier("SUIVI_LIVRAISON_INTERNE", function(r) { return expSet[String(r[COL_SUIVI_FLOTTE.EXP_ID - 1])]; });
+      planifier("PHOTOS_CHARGEMENT", function(r) {
+        const ok = expSet[String(r[COL_PHC.EXP_ID - 1])];
+        if (ok) { foldersDrive.push(String(r[COL_PHC.FOLDER_ID - 1] || "")); filesDrive.push(String(r[COL_PHC.FILE_ID - 1] || "")); }
+        return ok;
+      });
+      // Commandes : celles demandées + celles qui n'ont plus aucune expédition restante
+      const cmdSet2 = idSet(cmdIdsTouches);
+      const reste = {};
+      sheetToObjects(getSheet("EXPEDITIONS"), COL_EXP).forEach(function(e) { if (!expSet[e.ID]) reste[e.CMD_ID] = true; });
+      planifier("COMMANDES", function(r) {
+        const id = String(r[0]);
+        return cmdSet2[id] && (table === "COMMANDES" || !reste[id]);
+      });
+    } else if (table === "UTILISATEURS") {
+      const sel = idSet(ids);
+      const users = sheetToObjects(getSheet("UTILISATEURS"), COL_USR);
+      const moi = users.find(function(u) { return u.EMAIL && u.EMAIL.toLowerCase() === admin.EMAIL.toLowerCase(); });
+      if (moi && sel[moi.ID]) throw new Error("Vous ne pouvez pas supprimer votre propre compte.");
+      const adminsRestants = users.filter(function(u) { return u.ROLE === "admin" && u.ACTIF && !sel[u.ID]; });
+      if (!adminsRestants.length) throw new Error("Il doit rester au moins un administrateur actif.");
+      planifier("UTILISATEURS", function(r) { return sel[String(r[0])]; });
+    } else {
+      const sel = idSet(ids);
+      planifier(table, function(r) {
+        const ok = sel[String(r[0])];
+        if (ok && table === "PHOTOS_CHARGEMENT") filesDrive.push(String(r[COL_PHC.FILE_ID - 1] || ""));
+        return ok;
+      });
+    }
+
+    const total = aSauver.length;
+    if (!total) throw new Error("Aucune ligne correspondante (déjà supprimées ?).");
+
+    // 1) Sauvegarde dans la corbeille AVANT toute suppression
+    adminSauverCorbeille_(lot, admin, ts, aSauver);
+    // 2) Suppression des lignes
+    Object.keys(plan).forEach(function(name) { adminSupprimerNumLignes_(plan[name].sh, plan[name].num); });
+    // 3) Drive : dossiers / fichiers mis à la corbeille Drive (récupérables 30 jours depuis Drive)
+    let driveOk = 0, driveKo = 0;
+    const dossiers = {};
+    foldersDrive.forEach(function(f) { if (f) dossiers[f] = true; });
+    Object.keys(dossiers).forEach(function(f) { try { DriveApp.getFolderById(f).setTrashed(true); driveOk++; } catch (e) { driveKo++; } });
+    if (!Object.keys(dossiers).length) {
+      filesDrive.forEach(function(f) { if (f) { try { DriveApp.getFileById(f).setTrashed(true); driveOk++; } catch (e) { driveKo++; } } });
+    }
+
+    _photosIndexCache = null;
+    return { ok: true, lot: lot, supprimees: total, parOnglet: rapport, drive: { misEnCorbeille: driveOk, echecs: driveKo } };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Corbeille regroupée par suppression (lot). */
+function adminListerCorbeille(params) {
+  assertAdmin(params.acteurEmail);
+  const sh = getSheet("CORBEILLE");
+  const lots = {};
+  if (sh && sh.getLastRow() > 1) {
+    sh.getRange(2, 1, sh.getLastRow() - 1, 6).getValues().forEach(function(r) {
+      const lot = String(r[1]);
+      if (!lots[lot]) lots[lot] = { lot: lot, supprimeLe: r[2] instanceof Date ? r[2].toISOString() : String(r[2]), supprimePar: r[3], parOnglet: {}, total: 0, exemples: [] };
+      lots[lot].parOnglet[r[4]] = (lots[lot].parOnglet[r[4]] || 0) + 1;
+      lots[lot].total++;
+      if (lots[lot].exemples.length < 3 && (r[4] === "EXPEDITIONS" || r[4] === "COMMANDES" || lots[lot].exemples.length < 1)) lots[lot].exemples.push(r[4] + " " + r[5]);
+    });
+  }
+  const liste = Object.keys(lots).map(function(k) { return lots[k]; });
+  liste.sort(function(a, b) { return a.supprimeLe < b.supprimeLe ? 1 : -1; });
+  return { ok: true, lots: liste };
+}
+
+/** Remet dans leur onglet toutes les lignes d'un lot de suppression. */
+function adminRestaurer(params) {
+  const admin = assertAdmin(params.acteurEmail);
+  const lot = String(params.lot || "");
+  if (!lot) throw new Error("lot requis");
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const cor = getSheet("CORBEILLE");
+    const data = cor.getLastRow() > 1 ? cor.getRange(2, 1, cor.getLastRow() - 1, 7).getValues() : [];
+    const num = [], parOnglet = {};
+    data.forEach(function(r, i) {
+      if (String(r[1]) !== lot) return;
+      const table = String(r[4]);
+      if (ADMIN_TABLES.indexOf(table) === -1) return;
+      const values = JSON.parse(r[6]);
+      const sh = getSheet(table);
+      // Évite les doublons si la ligne a été recréée entre-temps
+      if (findRow(sh, 1, r[5]) > 0) { num.push(i + 2); return; }
+      sh.appendRow(values);
+      parOnglet[table] = (parOnglet[table] || 0) + 1;
+      num.push(i + 2);
+    });
+    if (!num.length) throw new Error("Lot introuvable dans la corbeille");
+    adminSupprimerNumLignes_(cor, num);
+    _photosIndexCache = null;
+    return { ok: true, restaurees: Object.keys(parOnglet).reduce(function(a, k) { return a + parOnglet[k]; }, 0), parOnglet: parOnglet,
+             note: parOnglet.PHOTOS_CHARGEMENT ? "Les dossiers Drive supprimés se récupèrent depuis la corbeille de Drive (30 jours)." : "" };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Supprime définitivement des lots de la corbeille (ou toute la corbeille avec all=true). */
+function adminViderCorbeille(params) {
+  assertAdmin(params.acteurEmail);
+  if (String(params.confirmation || "") !== "SUPPRIMER") throw new Error('Confirmation manquante : tapez "SUPPRIMER".');
+  const lots = Array.isArray(params.lots) ? params.lots.map(String) : [];
+  const tout = params.all === true || String(params.all) === "true";
+  if (!tout && !lots.length) throw new Error("lots ou all requis");
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const cor = getSheet("CORBEILLE");
+    if (cor.getLastRow() < 2) return { ok: true, supprimees: 0 };
+    const ids = cor.getRange(2, 2, cor.getLastRow() - 1, 1).getValues();
+    const set = {}; lots.forEach(function(l) { set[l] = true; });
+    const num = [];
+    ids.forEach(function(r, i) { if (tout || set[String(r[0])]) num.push(i + 2); });
+    adminSupprimerNumLignes_(cor, num);
+    return { ok: true, supprimees: num.length };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // ─── PHOTOS DE CHARGEMENT → GOOGLE DRIVE ──────────────────────────────────────

@@ -12,6 +12,7 @@ import UtilisateursPage from "@/pages/Utilisateurs";
 import JustificatifsPage from "@/pages/Justificatifs";
 import ControleurPage from "@/pages/Controleur";
 import ConfigurationPage from "@/pages/Configuration";
+import DonneesAdminPage from "@/pages/DonneesAdmin";
 import DashboardPage from "@/pages/Dashboard";
 // Module flotte interne
 import AujourdhuiPage from "@/pages/flotte/Aujourdhui";
@@ -53,6 +54,7 @@ function AppRouter() {
       <Route path="/controleur" component={ControleurPage} />
       <Route path="/dashboard" component={DashboardPage} />
       <Route path="/utilisateurs" component={UtilisateursPage} />
+      <Route path="/donnees" component={DonneesAdminPage} />
       <Route path="/configuration" component={ConfigurationPage} />
       {/* Module flotte interne — 6 sections */}
       <Route path="/flotte" component={() => <Redirect to="/flotte/aujourdhui" />} />

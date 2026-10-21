@@ -10,6 +10,7 @@ import {
   Truck,
   Users,
   Settings,
+  Database,
 } from "lucide-react";
 import type { ComponentType } from "react";
 import type { Role } from "@/types/domain";
@@ -39,6 +40,7 @@ export const NAV: NavItem[] = [
   { to: "/dashboard",         label: "Tableau de bord",      short: "KPI",        icon: BarChart3,      group: "pilotage" },
   { to: "/flotte/aujourdhui", label: "Flotte interne",       short: "Flotte",     icon: Truck,          group: "pilotage",  flagSuperviseur: true, prefix: "/flotte" },
   { to: "/utilisateurs",      label: "Utilisateurs",         short: "Équipe",     icon: Users,          group: "admin",     roles: ["admin"] },
+  { to: "/donnees",           label: "Données",              short: "Données",    icon: Database,       group: "admin",     roles: ["admin"] },
   { to: "/configuration",     label: "Configuration",        short: "Réglages",   icon: Settings,       group: "admin",     roles: ["admin"] },
 ];
 

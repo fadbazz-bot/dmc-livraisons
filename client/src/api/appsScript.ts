@@ -357,6 +357,49 @@ export const photos = {
     apiPost<{ ok: true; count: number; folderUrl: string }>("terminerPhotosChargement", input),
 };
 
+// ─── Administration : nettoyage des données ──────────────────────────────────
+
+export interface DonneesOnglet {
+  ok: true;
+  table: string;
+  headers: string[];
+  /** Index de la colonne qui porte l'identifiant de ligne */
+  idCol: number;
+  rows: { id: string; cells: (string | number | boolean | null)[] }[];
+  total: number;
+  tronque: boolean;
+}
+
+export interface LotCorbeille {
+  lot: string;
+  supprimeLe: string;
+  supprimePar: string;
+  parOnglet: Record<string, number>;
+  total: number;
+  exemples: string[];
+}
+
+export const admin = {
+  compter: (acteurEmail: string) =>
+    apiGet<{ ok: true; comptes: Record<string, number> }>("adminCompterDonnees", { acteurEmail }),
+  lister: (acteurEmail: string, table: string) =>
+    apiGet<DonneesOnglet>("adminListerDonnees", { acteurEmail, table }),
+  supprimer: (input: { acteurEmail: string; table: string; ids: string[]; confirmation: string }) =>
+    apiPost<{
+      ok: true;
+      lot: string;
+      supprimees: number;
+      parOnglet: Record<string, number>;
+      drive: { misEnCorbeille: number; echecs: number };
+    }>("adminSupprimerLignes", input),
+  corbeille: (acteurEmail: string) =>
+    apiGet<{ ok: true; lots: LotCorbeille[] }>("adminListerCorbeille", { acteurEmail }),
+  restaurer: (input: { acteurEmail: string; lot: string }) =>
+    apiPost<{ ok: true; restaurees: number; parOnglet: Record<string, number>; note: string }>("adminRestaurer", input),
+  viderCorbeille: (input: { acteurEmail: string; lots?: string[]; all?: boolean; confirmation: string }) =>
+    apiPost<{ ok: true; supprimees: number }>("adminViderCorbeille", input),
+};
+
 // ─── Utilitaires ─────────────────────────────────────────────────────────────
 
 export const utils = {
@@ -475,6 +518,7 @@ export const api = {
   kpi,
   medias,
   photos,
+  admin,
   utils,
   // Module flotte interne
   flotteChauffeurs,
