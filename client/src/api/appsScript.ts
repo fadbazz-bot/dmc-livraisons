@@ -336,6 +336,82 @@ export const medias = {
     apiPost<{ ok: true; id: string }>("addMedia", input),
 };
 
+// ─── Non-conformités ─────────────────────────────────────────────────────────
+
+export type NcStatut = "ouverte" | "expliquee" | "contestee" | "action_en_cours" | "cloturee";
+
+export interface NcHistorique {
+  at: string;
+  par: string;
+  texte: string;
+}
+
+export interface NonConformite {
+  id: string;
+  type: string;
+  typeLabel: string;
+  expId: string | null;
+  numCmd: string;
+  client: string;
+  numExpedition: string;
+  site: string;
+  zone: string;
+  responsableEmail: string;
+  creeLe: string;
+  detail: string;
+  statut: NcStatut;
+  origine: string;
+  explication: string;
+  expliquePar: string;
+  expliqueLe: string | null;
+  motifs: string;
+  controleurEmail: string;
+  decision: string;
+  decisionLe: string | null;
+  controleurCommentaire: string;
+  action: string;
+  actionEcheance: string | null;
+  actionFaiteLe: string | null;
+  clotureLe: string | null;
+  limiteJustif: string | null;
+  enRetardJustif: boolean;
+  enRetardAction: boolean;
+  historique: NcHistorique[];
+}
+
+export interface NcListe {
+  liste: NonConformite[];
+  types: { code: string; label: string; actif: boolean }[];
+}
+
+export type NcDecision = "acceptee" | "contestee" | "confirmee";
+
+export const nonConformites = {
+  lister: (acteurEmail: string, depuis?: string) =>
+    apiGet<NcListe>("getNonConformites", depuis ? { acteurEmail, depuis } : { acteurEmail }),
+  justifier: (input: { id: string; acteurEmail: string; explication: string; motifs?: string[] }) =>
+    apiPost<{ ok: true }>("justifierNonConformite", input),
+  decider: (input: {
+    id: string;
+    acteurEmail: string;
+    decision: NcDecision;
+    commentaire?: string;
+    action?: string;
+    echeance?: string;
+  }) => apiPost<{ ok: true }>("decisionNonConformite", input),
+  terminerAction: (input: { id: string; acteurEmail: string; commentaire: string }) =>
+    apiPost<{ ok: true }>("terminerActionNonConformite", input),
+  creer: (input: {
+    acteurEmail: string;
+    detail: string;
+    site: string;
+    zone?: string;
+    numCmd?: string;
+    client?: string;
+    photo?: string;
+  }) => apiPost<{ ok: true; id: string }>("creerNonConformite", input),
+};
+
 // ─── Photos de chargement (Google Drive) ─────────────────────────────────────
 
 export const photos = {
@@ -518,6 +594,7 @@ export const api = {
   kpi,
   medias,
   photos,
+  nonConformites,
   admin,
   utils,
   // Module flotte interne

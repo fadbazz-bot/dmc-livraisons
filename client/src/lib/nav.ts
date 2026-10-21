@@ -4,7 +4,6 @@ import {
   ShieldCheck,
   DoorOpen,
   Wrench,
-  FileWarning,
   ClipboardCheck,
   BarChart3,
   Truck,
@@ -35,8 +34,7 @@ export const NAV: NavItem[] = [
   { to: "/poste-garde",       label: "Poste de garde",       short: "Garde",      icon: ShieldCheck,    group: "terrain",   roles: ["chef_poste", "admin"] },
   { to: "/agent-showroom",    label: "Agent showroom",       short: "Showroom",   icon: DoorOpen,       group: "terrain",   roles: ["agent_showroom", "admin"] },
   { to: "/responsable",       label: "Préparation",          short: "Prépa",      icon: Wrench,         group: "terrain",   roles: ["responsable", "admin"] },
-  { to: "/justificatifs",     label: "Justificatifs",        short: "Retards",    icon: FileWarning,    group: "terrain",   roles: ["responsable", "admin"] },
-  { to: "/controleur",        label: "Contrôle",             short: "Contrôle",   icon: ClipboardCheck, group: "terrain",   roles: ["controleur", "admin"] },
+  { to: "/non-conformites",   label: "Non-conformités",      short: "Qualité",    icon: ClipboardCheck, group: "terrain",   roles: ["responsable", "controleur", "admin"] },
   { to: "/dashboard",         label: "Tableau de bord",      short: "KPI",        icon: BarChart3,      group: "pilotage",  roles: ["admin", "commercial", "responsable", "controleur"] },
   { to: "/flotte/aujourdhui", label: "Flotte interne",       short: "Flotte",     icon: Truck,          group: "pilotage",  flagSuperviseur: true, prefix: "/flotte" },
   { to: "/utilisateurs",      label: "Utilisateurs",         short: "Équipe",     icon: Users,          group: "admin",     roles: ["admin"] },
@@ -93,7 +91,7 @@ export function routeAccueil(role: string): string {
     case "agent_showroom": return "/agent-showroom";
     case "chef_poste":     return "/poste-garde";
     case "responsable":    return "/responsable";
-    case "controleur":     return "/controleur";
+    case "controleur":     return "/non-conformites";
     default:               return "/file";
   }
 }

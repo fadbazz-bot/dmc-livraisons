@@ -13,6 +13,7 @@ const ONGLETS: { key: string; label: string; cascade?: string }[] = [
   { key: "EXPEDITIONS", label: "Expéditions", cascade: "Les événements, photos (feuille et Drive) et le suivi flotte de ces expéditions sont supprimés avec elles. La commande part avec sa dernière expédition." },
   { key: "COMMANDES", label: "Commandes", cascade: "Toutes les expéditions de ces commandes sont supprimées, avec leurs événements, photos et suivi flotte." },
   { key: "EVENEMENTS", label: "Historique" },
+  { key: "NON_CONFORMITES", label: "Non-conformités" },
   { key: "MEDIAS", label: "Photos (feuille)" },
   { key: "PHOTOS_CHARGEMENT", label: "Photos Drive", cascade: "Les fichiers Drive correspondants sont mis à la corbeille de Drive." },
   { key: "SUIVI_LIVRAISON_INTERNE", label: "Suivi flotte" },
