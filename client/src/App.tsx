@@ -23,6 +23,7 @@ import KpiFlottePage from "@/pages/flotte/KpiFlotte";
 import ImportNavPage from "@/pages/flotte/ImportNav";
 import ReferentielsFlottePage from "@/pages/flotte/Referentiels";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
+import { routeAccueil, routeAutorisee } from "@/lib/nav";
 import { useEffect } from "react";
 
 function Redirect({ to }: { to: string }) {
@@ -38,10 +39,10 @@ function AppRouter() {
   // Le chef flotte est redirigé sur /flotte/aujourdhui à l'ouverture
   // (il n'a accès qu'à la section Flotte interne)
   // L'agent showroom est redirigé directement sur son écran dédié
-  const defaultRoute =
-    user?.role === "chef_flotte" ? "/flotte/aujourdhui" :
-    user?.role === "agent_showroom" ? "/agent-showroom" :
-    "/file";
+  const [location] = useLocation();
+  const defaultRoute = routeAccueil(user?.role ?? "");
+  // Accès direct par adresse : un rôle ne voit que ses propres écrans
+  if (user && !routeAutorisee(user, location)) return <Redirect to={defaultRoute} />;
   return (
     <Switch>
       <Route path="/" component={() => <Redirect to={defaultRoute} />} />

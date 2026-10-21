@@ -30,14 +30,14 @@ export interface NavItem {
 }
 
 export const NAV: NavItem[] = [
-  { to: "/file",              label: "File des expéditions", short: "File",       icon: LayoutList,     group: "commandes" },
+  { to: "/file",              label: "File des expéditions", short: "File",       icon: LayoutList,     group: "commandes", roles: ["admin", "commercial", "responsable", "controleur"] },
   { to: "/nouvelle-demande",  label: "Nouvelle demande",     short: "Nouveau",    icon: PackagePlus,    group: "commandes", roles: ["commercial", "admin"] },
   { to: "/poste-garde",       label: "Poste de garde",       short: "Garde",      icon: ShieldCheck,    group: "terrain",   roles: ["chef_poste", "admin"] },
   { to: "/agent-showroom",    label: "Agent showroom",       short: "Showroom",   icon: DoorOpen,       group: "terrain",   roles: ["agent_showroom", "admin"] },
   { to: "/responsable",       label: "Préparation",          short: "Prépa",      icon: Wrench,         group: "terrain",   roles: ["responsable", "admin"] },
   { to: "/justificatifs",     label: "Justificatifs",        short: "Retards",    icon: FileWarning,    group: "terrain",   roles: ["responsable", "admin"] },
   { to: "/controleur",        label: "Contrôle",             short: "Contrôle",   icon: ClipboardCheck, group: "terrain",   roles: ["controleur", "admin"] },
-  { to: "/dashboard",         label: "Tableau de bord",      short: "KPI",        icon: BarChart3,      group: "pilotage" },
+  { to: "/dashboard",         label: "Tableau de bord",      short: "KPI",        icon: BarChart3,      group: "pilotage",  roles: ["admin", "commercial", "responsable", "controleur"] },
   { to: "/flotte/aujourdhui", label: "Flotte interne",       short: "Flotte",     icon: Truck,          group: "pilotage",  flagSuperviseur: true, prefix: "/flotte" },
   { to: "/utilisateurs",      label: "Utilisateurs",         short: "Équipe",     icon: Users,          group: "admin",     roles: ["admin"] },
   { to: "/donnees",           label: "Données",              short: "Données",    icon: Database,       group: "admin",     roles: ["admin"] },
@@ -84,4 +84,33 @@ export function estActif(item: NavItem, location: string): boolean {
 export function initiales(nom: string): string {
   const parts = nom.replace(/@.*/, "").split(/[\s._-]+/).filter(Boolean);
   return ((parts[0]?.[0] ?? "?") + (parts[1]?.[0] ?? "")).toUpperCase();
+}
+
+/** Écran d'accueil de chaque rôle (jamais la vue commerciale pour le terrain). */
+export function routeAccueil(role: string): string {
+  switch (role) {
+    case "chef_flotte":    return "/flotte/aujourdhui";
+    case "agent_showroom": return "/agent-showroom";
+    case "chef_poste":     return "/poste-garde";
+    case "responsable":    return "/responsable";
+    case "controleur":     return "/controleur";
+    default:               return "/file";
+  }
+}
+
+/**
+ * Le rôle a-t-il le droit d'ouvrir cette adresse ? Les menus cachent déjà les pages
+ * interdites, mais taper l'adresse à la main (ou un vieux favori) les ouvrait quand même.
+ */
+export function routeAutorisee(user: { role: string; superviseurFlotte?: boolean }, path: string): boolean {
+  const role = user.role as Role;
+  if (path === "/" || role === "admin") return true;
+  if (role === "chef_flotte") return path.startsWith("/flotte") || path === "/referentiels-flotte";
+  if (role === "agent_showroom") return path === "/agent-showroom";
+  if (role === "chef_poste") return path === "/poste-garde";
+  const item = NAV.find((n) => path === n.to || (n.prefix && path.startsWith(n.prefix)));
+  if (!item) return true; // adresse inconnue : page « introuvable »
+  if (item.roles && !item.roles.includes(role)) return false;
+  if (item.flagSuperviseur && !user.superviseurFlotte) return false;
+  return true;
 }

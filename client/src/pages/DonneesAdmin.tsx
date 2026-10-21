@@ -104,7 +104,7 @@ function OngletVue({ email, table }: { email: string; table: string }) {
     queryFn: () => api.admin.lister(email, table),
     staleTime: 60_000,
   });
-  const data: DonneesOnglet | undefined = q.data;
+  const data: DonneesOnglet | undefined = q.data && Array.isArray(q.data.rows) ? q.data : undefined;
 
   const [recherche, setRecherche] = useState("");
   const [colFiltre, setColFiltre] = useState("");
