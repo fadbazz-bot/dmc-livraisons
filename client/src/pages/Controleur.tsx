@@ -142,7 +142,7 @@ function ValidationRow({ exp, onClick }: { exp: Expedition; onClick: () => void 
         <StatutBadge statut={exp.statut} />
       </div>
       <div className="mt-2 rounded-lg bg-slate-50 border border-slate-100 p-2">
-        <div className="text-[11px]r text-slate-500">Motifs déclarés</div>
+        <div className="text-[11px] text-slate-500">Motifs déclarés</div>
         <div className="text-sm text-slate-900 font-medium">
           {exp.motifRetard || <span className="italic text-slate-400">—</span>}
         </div>

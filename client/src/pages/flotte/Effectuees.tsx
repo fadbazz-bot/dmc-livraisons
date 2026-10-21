@@ -73,7 +73,7 @@ export default function EffectueesPage() {
           <div className="card overflow-hidden">
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 text-xs font-mediumr text-slate-500 border-b border-slate-200">
+                <thead className="bg-slate-50 text-xs font-medium text-slate-500 border-b border-slate-200">
                   <tr>
                     <th className="px-3 py-2.5 text-left">Prévue</th>
                     <th className="px-3 py-2.5 text-left">Réelle</th>

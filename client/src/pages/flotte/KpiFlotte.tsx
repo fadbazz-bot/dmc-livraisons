@@ -152,7 +152,7 @@ export default function KpiFlottePage() {
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
-                    <thead className="text-xs font-mediumr text-slate-500 border-b border-slate-200">
+                    <thead className="text-xs font-medium text-slate-500 border-b border-slate-200">
                       <tr>
                         <th className="px-2 py-2 text-left">Chauffeur</th>
                         <th className="px-2 py-2 text-right">Total</th>
