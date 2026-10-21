@@ -111,6 +111,19 @@ export interface Expedition {
   dateLivraisonPrevue?: string | null;
   chauffeurFlotteId?: string | null;
   confirmeNav?: boolean;
+
+  // Photos de chargement (Google Drive)
+  nbPhotosChargement?: number;
+  dossierPhotosUrl?: string | null;
+}
+
+export interface PhotoChargement {
+  id: string;
+  type: "chargement" | "sortie_garde";
+  fileUrl: string;
+  nom: string;
+  acteurNom: string;
+  timestamp: string;
 }
 
 // ─── Référentiels module flotte interne ──────────────────────────────────────

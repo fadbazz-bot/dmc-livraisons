@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Wrench, RefreshCw, KeyRound } from "lucide-react";
+import { Wrench, RefreshCw, KeyRound, Camera, CheckCircle2, AlertTriangle } from "lucide-react";
 import { api } from "@/api/appsScript";
 import { useAuth } from "@/lib/auth";
 import { cacheSet, persistedCache } from "@/lib/persistentCache";
@@ -8,6 +8,7 @@ import type { Expedition } from "@/types/domain";
 import { StatutBadge } from "@/components/StatutBadge";
 import { JalonTimeline } from "@/components/JalonTimeline";
 import { SaisieCodeModal } from "@/components/modals/SaisieCodeModal";
+import { PhotosChargementModal } from "@/components/modals/PhotosChargementModal";
 import { formatRelative } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
@@ -42,11 +43,15 @@ function zoneToSite(zone: string): "Dakar" | "Diamniadio" {
  * (camion sur site, en attente du code), filtrées par catégorie de magasin
  * ET par site du responsable (voir zoneCategorie / zoneToSite ci-dessus).
  */
+const PHOTOS_MIN = 3;
+
 export default function ResponsablePage() {
   const { user } = useAuth();
   const myZone = user?.zone || "";
   const myCategorie = myZone ? zoneCategorie(myZone) : null;
   const [activeExp, setActiveExp] = useState<Expedition | null>(null);
+  const [photoExp, setPhotoExp] = useState<Expedition | null>(null);
+  const [section, setSection] = useState<"code" | "chargement">("code");
 
   const { data: exps = [], isLoading, refetch, isFetching, error } = useQuery({
     queryKey: ["expeditions"],
@@ -59,17 +64,26 @@ export default function ResponsablePage() {
     ...persistedCache<Expedition[]>("expeditions"),
   });
 
+  // Filtre commun : ma catégorie de magasin et mon site
+  const dansMonPerimetre = (e: Expedition) =>
+    (!myCategorie || zoneCategorie(e.zone) === myCategorie) && (!user?.site || zoneToSite(e.zone) === user.site);
+
   // Camions sur site, en attente que le client présente son code
-  const aTraiter = useMemo(() => {
-    let list = exps.filter((e) => e.statut === "entree_site");
-    if (myCategorie) {
-      list = list.filter((e) => zoneCategorie(e.zone) === myCategorie);
-    }
-    if (user?.site) {
-      list = list.filter((e) => zoneToSite(e.zone) === user.site);
-    }
-    return list;
-  }, [exps, myCategorie, user?.site]);
+  const aTraiter = useMemo(
+    () => exps.filter((e) => e.statut === "entree_site" && dansMonPerimetre(e)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [exps, myCategorie, user?.site],
+  );
+  // Chargement en cours : photos du chargement à prendre avant le poste de garde
+  const enChargement = useMemo(
+    () =>
+      exps.filter(
+        (e) => (e.statut === "en_chargement" || e.statut === "pret_sortie") && dansMonPerimetre(e),
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [exps, myCategorie, user?.site],
+  );
+  const photosManquantes = enChargement.filter((e) => (e.nbPhotosChargement ?? 0) < PHOTOS_MIN).length;
 
   return (
     <div className="h-full flex flex-col">
@@ -78,7 +92,7 @@ export default function ResponsablePage() {
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div>
-              <h1 className="text-xl font-semibold tracking-tight text-slate-900">Saisie code livraison</h1>
+              <h1 className="text-xl font-semibold tracking-tight text-slate-900">Préparation et chargement</h1>
               <p className="text-xs text-slate-500">
                 {user?.nom}
                 {myZone && ` — Zone ${myZone}`}
@@ -95,14 +109,52 @@ export default function ResponsablePage() {
             <span className="hidden sm:inline">Rafraîchir</span>
           </button>
         </div>
+        <div className="mt-3 grid grid-cols-2 gap-1 rounded-ctl bg-slate-100 p-1">
+          <button
+            onClick={() => setSection("code")}
+            className={cn(
+              "flex items-center justify-center gap-1.5 rounded-md px-2 py-2.5 text-sm font-medium transition-colors",
+              section === "code" ? "bg-white text-brand-900 shadow-sm" : "text-slate-600 hover:text-slate-900",
+            )}
+          >
+            <KeyRound className="h-4 w-4" />
+            Code à saisir
+            {aTraiter.length > 0 && (
+              <span className="rounded-full bg-brand-900 px-1.5 py-0.5 text-[10px] font-bold text-white">{aTraiter.length}</span>
+            )}
+          </button>
+          <button
+            onClick={() => setSection("chargement")}
+            className={cn(
+              "flex items-center justify-center gap-1.5 rounded-md px-2 py-2.5 text-sm font-medium transition-colors",
+              section === "chargement" ? "bg-white text-brand-900 shadow-sm" : "text-slate-600 hover:text-slate-900",
+            )}
+          >
+            <Camera className="h-4 w-4" />
+            Chargement
+            {enChargement.length > 0 && (
+              <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white", photosManquantes > 0 ? "bg-accent" : "bg-brand-900")}>
+                {enChargement.length}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Liste */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-        <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 mb-4 text-sm text-blue-900">
-          Saisis le code PIN que le client t'a remis pour <strong>enclencher le chargement</strong>.
-          Le chargement s'arrêtera automatiquement à la sortie du site.
-        </div>
+        {section === "code" ? (
+          <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 mb-4 text-sm text-blue-900">
+            Saisis le code PIN que le client t'a remis pour <strong>enclencher le chargement</strong>.
+            Le chargement s'arrêtera automatiquement à la sortie du site.
+          </div>
+        ) : (
+          <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 mb-4 text-sm text-amber-900">
+            Une fois le véhicule chargé, le livreur <strong>photographie tous les articles</strong> avec ce
+            téléphone, <strong>avant</strong> de passer au poste de garde. Sans photos, le garde ne peut pas
+            valider la sortie.
+          </div>
+        )}
 
         {isLoading ? (
           <div className="card p-6 text-center text-slate-500 text-sm">Chargement…</div>
@@ -112,21 +164,27 @@ export default function ResponsablePage() {
               {error instanceof Error ? error.message : "Erreur inconnue"}
             </p>
           </div>
-        ) : aTraiter.length === 0 ? (
+        ) : section === "code" ? (
+          aTraiter.length === 0 ? (
+            <div className="card p-10 text-center">
+              <p className="text-slate-500">Aucun camion en attente de saisie de code.</p>
+              {myZone && <p className="text-xs text-slate-400 mt-1">Filtre actif : zone « {myZone} ».</p>}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {aTraiter.map((exp) => (
+                <ResponsableCard key={exp.id} exp={exp} onAction={() => setActiveExp(exp)} />
+              ))}
+            </div>
+          )
+        ) : enChargement.length === 0 ? (
           <div className="card p-10 text-center">
-            <p className="text-slate-500">Aucun camion en attente de saisie de code.</p>
-            {myZone && (
-              <p className="text-xs text-slate-400 mt-1">Filtre actif : zone « {myZone} ».</p>
-            )}
+            <p className="text-slate-500">Aucun chargement en cours.</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {aTraiter.map((exp) => (
-              <ResponsableCard
-                key={exp.id}
-                exp={exp}
-                onAction={() => setActiveExp(exp)}
-              />
+            {enChargement.map((exp) => (
+              <ChargementCard key={exp.id} exp={exp} onAction={() => setPhotoExp(exp)} />
             ))}
           </div>
         )}
@@ -134,6 +192,9 @@ export default function ResponsablePage() {
 
       {activeExp && (
         <SaisieCodeModal exp={activeExp} open onClose={() => setActiveExp(null)} />
+      )}
+      {photoExp && (
+        <PhotosChargementModal exp={photoExp} open onClose={() => setPhotoExp(null)} />
       )}
     </div>
   );
@@ -178,6 +239,45 @@ function ResponsableCard({
         <button onClick={onAction} className="btn-primary shrink-0 gap-2">
           <KeyRound className="h-4 w-4" />
           Saisir code
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ChargementCard({ exp, onAction }: { exp: Expedition; onAction: () => void }) {
+  const n = exp.nbPhotosChargement ?? 0;
+  const ok = n >= PHOTOS_MIN;
+  return (
+    <div className="card card-hover p-4 animate-in">
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-mono text-sm font-semibold text-slate-900">{exp.numCmdNav || "—"}</span>
+            <span className="text-slate-300">·</span>
+            <span className="font-medium text-slate-800 truncate">{exp.nomClient || "Client inconnu"}</span>
+            {exp.expParentId && (
+              <span className="text-xs font-medium bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">Reliquat</span>
+            )}
+          </div>
+          <div className="mt-1 text-xs text-slate-500 flex items-center gap-3 flex-wrap">
+            <span>{exp.zone}</span>
+            {exp.plaque && <span className="num">{exp.plaque}</span>}
+            {exp.chauffeur && <span>{exp.chauffeur}</span>}
+          </div>
+        </div>
+        <span className={ok ? "badge-success" : "badge-warn"}>
+          {ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+          {n} photo{n > 1 ? "s" : ""}
+        </span>
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-slate-500">
+          {ok ? "Photos faites : le véhicule peut passer au poste de garde." : `Minimum ${PHOTOS_MIN} photos avant le poste de garde.`}
+        </p>
+        <button onClick={onAction} className={cn("shrink-0 gap-2", ok ? "btn-outline" : "btn-primary")}>
+          <Camera className="h-4 w-4" />
+          {ok ? "Compléter" : "Photographier"}
         </button>
       </div>
     </div>

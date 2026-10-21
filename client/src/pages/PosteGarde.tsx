@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Truck, LogOut, RefreshCw, ShieldCheck, Users, ChevronDown, ChevronRight, Search } from "lucide-react";
+import { Truck, LogOut, RefreshCw, Users, ChevronDown, ChevronRight, Search, Camera, AlertTriangle } from "lucide-react";
 import { api } from "@/api/appsScript";
 import { useAuth } from "@/lib/auth";
 import { cacheSet, persistedCache } from "@/lib/persistentCache";
@@ -363,6 +363,8 @@ function ExpActionCard({
   action: string;
   onAction: () => void;
 }) {
+  const enSortie = exp.statut === "en_chargement" || exp.statut === "pret_sortie";
+  const nbPhotos = exp.nbPhotosChargement ?? 0;
   return (
     <div className="card card-hover p-4 animate-in">
       <div className="flex items-start justify-between gap-3 mb-2">
@@ -384,7 +386,15 @@ function ExpActionCard({
             <span>{formatRelative(exp.t0)}</span>
           </div>
         </div>
-        <StatutBadge statut={exp.statut} />
+        <div className="flex flex-col items-end gap-1.5">
+          <StatutBadge statut={exp.statut} />
+          {enSortie && exp.nbPhotosChargement !== undefined && (
+            <span className={nbPhotos >= 3 ? "badge-success" : "badge-warn"}>
+              {nbPhotos >= 3 ? <Camera className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+              {nbPhotos >= 3 ? `${nbPhotos} photos de chargement` : "Photos de chargement manquantes"}
+            </span>
+          )}
+        </div>
       </div>
       <div className="flex items-center justify-between gap-3">
         <JalonTimeline exp={exp} compact />

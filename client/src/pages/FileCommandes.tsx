@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Search, RefreshCw, KeyRound, FileText, X, Plus, SlidersHorizontal, Clock, User, Truck, Hash } from "lucide-react";
+import { Search, RefreshCw, KeyRound, FileText, X, Plus, SlidersHorizontal, Clock, User, Truck, Hash, Camera } from "lucide-react";
 import { api } from "@/api/appsScript";
 import type { Expedition, StatutExpedition } from "@/types/domain";
 import { StatutBadge, STATUT_BAR } from "@/components/StatutBadge";
@@ -567,6 +567,18 @@ function ExpeditionRow({
         {/* Statut + actions */}
         <div className="flex flex-wrap items-center gap-2 lg:w-[290px] lg:shrink-0 lg:flex-col lg:items-end lg:gap-2">
           <StatutBadge statut={exp.statut} />
+          {exp.dossierPhotosUrl && (
+            <a
+              href={exp.dossierPhotosUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="btn-outline px-2.5 py-1.5 text-[13px]"
+              title="Ouvrir le dossier Drive des photos de chargement"
+            >
+              <Camera className="h-3.5 w-3.5 text-slate-500" />
+              Photos ({exp.nbPhotosChargement ?? 0})
+            </a>
+          )}
           {(showBon || showCode) && (
             <div className="flex items-center gap-2 max-sm:ml-auto">
               {showBon && (

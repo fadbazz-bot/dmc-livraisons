@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Check } from "lucide-react";
+import { Camera, Check, AlertTriangle } from "lucide-react";
 import { api } from "@/api/appsScript";
 import type { Expedition } from "@/types/domain";
 import { Modal } from "@/components/Modal";
@@ -9,6 +9,9 @@ import { MultiPhotoCapture } from "@/components/MultiPhotoCapture";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/Toast";
 import { formatDuree } from "@/lib/format";
+
+/** Doit rester aligné sur CONFIG.PHOTOS_CHARGEMENT_MIN (Code.gs). */
+const PHOTOS_MIN = 3;
 
 interface Props {
   exp: Expedition;
@@ -21,6 +24,10 @@ export function SortieSiteModal({ exp, open, onClose }: Props) {
   const toast = useToast();
   const qc = useQueryClient();
   const [photos, setPhotos] = useState<string[]>([]);
+  const [derogation, setDerogation] = useState("");
+  const nbChargement = exp.nbPhotosChargement ?? 0;
+  // Ancien backend (champ absent) : pas de contrôle, comme avant.
+  const photosOk = exp.nbPhotosChargement === undefined || nbChargement >= PHOTOS_MIN;
 
   const m = useMutation({
     mutationFn: () => {
@@ -29,6 +36,7 @@ export function SortieSiteModal({ exp, open, onClose }: Props) {
         acteurEmail: user.email,
         acteurNom: user.nom,
         photosVehiculeUrls: photos,
+        derogationMotif: photosOk ? undefined : derogation.trim(),
       });
     },
     onSuccess: (res) => {
@@ -38,6 +46,7 @@ export function SortieSiteModal({ exp, open, onClose }: Props) {
       toast.success(msg);
       qc.invalidateQueries({ queryKey: ["expeditions"] });
       setPhotos([]);
+      setDerogation("");
       onClose();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erreur inconnue"),
@@ -49,7 +58,7 @@ export function SortieSiteModal({ exp, open, onClose }: Props) {
       ? Math.round((Date.now() - new Date(exp.t0).getTime()) / 60000)
       : null;
 
-  const canSubmit = photos.length > 0 && !m.isPending;
+  const canSubmit = photos.length > 0 && (photosOk || derogation.trim().length >= 5) && !m.isPending;
 
   return (
     <Modal
@@ -59,7 +68,7 @@ export function SortieSiteModal({ exp, open, onClose }: Props) {
         onClose();
       }}
       title="Valider la sortie"
-      description="Au moins une photo du véhicule chargé est obligatoire."
+      description="Photos du livreur vérifiées, puis au moins une photo du véhicule au portail."
       size="lg"
       footer={
         <>
@@ -89,6 +98,32 @@ export function SortieSiteModal({ exp, open, onClose }: Props) {
       <div className="space-y-4">
         <ExpInfoBlock exp={exp} />
 
+        {photosOk ? (
+          <div className="flex items-center gap-2.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-sm text-emerald-900">
+            <Camera className="h-4 w-4 shrink-0" />
+            <span>
+              <strong className="num">{nbChargement}</strong> photos du chargement enregistrées dans Drive par le livreur.
+            </span>
+          </div>
+        ) : (
+          <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 px-3.5 py-3 text-sm text-amber-900">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                <strong>Photos de chargement manquantes</strong> ({nbChargement}/{PHOTOS_MIN}). Renvoie le livreur
+                les prendre auprès du responsable magasin. Sortie sans photos uniquement en dernier recours :
+                le motif sera tracé.
+              </span>
+            </div>
+            <input
+              className="input"
+              value={derogation}
+              onChange={(e) => setDerogation(e.target.value)}
+              placeholder="Motif de la dérogation (obligatoire pour sortir sans photos)"
+            />
+          </div>
+        )}
+
         {ecoule !== null && (
           <div
             className={
@@ -111,7 +146,7 @@ export function SortieSiteModal({ exp, open, onClose }: Props) {
         )}
 
         <MultiPhotoCapture
-          label="Photos du véhicule chargé"
+          label="Photos du véhicule au portail"
           hint="Vue d'ensemble + détails. Au moins 1, jusqu'à 6 photos."
           values={photos}
           onChange={setPhotos}

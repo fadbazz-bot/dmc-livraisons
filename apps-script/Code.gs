@@ -33,6 +33,14 @@ const CONFIG = {
   CHAT_WEBHOOK:   "https://chat.googleapis.com/v1/spaces/AAQAXESvaoE/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=jl7L1GzEQDx7K-Pv9yXEYQTelyDIwFR4rrehMIaJnqk",
   EMAIL_ADMIN:    "Fadell.bazzouni@dmcsen.com",
   DELAI_MAX_MIN:  30,   // seuil retard en minutes
+  // ── Photos de chargement (Google Drive) ──
+  // Les livreurs photographient le véhicule chargé AVANT le poste de garde.
+  // Les photos vont dans Drive : <racine> / aaaa-mm / <N° commande> - <client> - <N° expédition>
+  DRIVE_ROOT_NAME:          "DMC Livraisons - Photos chargement", // dossier racine (créé au 1er usage)
+  DRIVE_ROOT_FOLDER_ID:     "",   // optionnel : ID d'un dossier existant à utiliser comme racine
+  PHOTOS_CHARGEMENT_OBLIGATOIRES: true,
+  PHOTOS_CHARGEMENT_MIN:    3,    // minimum de photos avant la sortie du site
+  PHOTOS_CHARGEMENT_MAX:    15,
 };
 
 // Colonnes feuille COMMANDES
@@ -85,6 +93,12 @@ const COL_EVT = { ID:1, EXP_ID:2, JALON:3, ACTEUR_EMAIL:4, ACTEUR_NOM:5, TIMESTA
 // Colonnes MEDIAS (feuille séparée pour stocker les photos en data URL)
 // A=ID | B=ExpId | C=Type | D=DataUrl | E=ActeurEmail | F=Timestamp
 const COL_MED = { ID:1, EXP_ID:2, TYPE:3, DATA_URL:4, ACTEUR_EMAIL:5, TIMESTAMP:6 };
+
+// Colonnes PHOTOS_CHARGEMENT (photos stockées dans Google Drive, la feuille ne garde que les liens)
+// A=ID | B=ExpId | C=Type (chargement|sortie_garde) | D=FileId | E=FileUrl | F=FolderId | G=FolderUrl
+// H=Nom | I=ActeurEmail | J=ActeurNom | K=Timestamp | L=Supprime (horodatage si retirée)
+const COL_PHC = { ID:1, EXP_ID:2, TYPE:3, FILE_ID:4, FILE_URL:5, FOLDER_ID:6, FOLDER_URL:7,
+                  NOM:8, ACTEUR_EMAIL:9, ACTEUR_NOM:10, TIMESTAMP:11, SUPPRIME:12 };
 
 // ─── MODULE FLOTTE INTERNE ─────────────────────────────────────────────────────
 
@@ -256,6 +270,11 @@ function handleRequest(e) {
       // Médias (photos plaque, permis, etc. dans la feuille MEDIAS)
       "getMedias":              () => getMedias(params),
       "addMedia":               () => addMedia(params),
+      // Photos de chargement → Google Drive
+      "addPhotoChargement":     () => addPhotoChargement(params),
+      "getPhotosChargement":    () => getPhotosChargement(params),
+      "deletePhotoChargement":  () => deletePhotoChargement(params),
+      "terminerPhotosChargement": () => terminerPhotosChargement(params),
       // ── Module flotte interne ─────────────────────────────────────────────
       // Référentiel chauffeurs
       "getChauffeursFlotte":    () => getChauffeursFlotte(params),
@@ -321,7 +340,7 @@ function getSheet(name) {
 function ensureSheetsExist() {
   const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
   const needed = [
-    "COMMANDES","EXPEDITIONS","UTILISATEURS","MOTIFS_RETARD","EVENEMENTS","MEDIAS",
+    "COMMANDES","EXPEDITIONS","UTILISATEURS","MOTIFS_RETARD","EVENEMENTS","MEDIAS","PHOTOS_CHARGEMENT",
     // Module flotte interne
     "FLOTTE_CHAUFFEURS","CLIENTS_LIVRAISON_INTERNE","MOTIFS_RETARD_FLOTTE",
     "SUIVI_LIVRAISON_INTERNE","HEURE_DEPART_FLOTTE",
@@ -344,6 +363,9 @@ function seedSheetHeaders(sh, name) {
   switch (name) {
     case "MEDIAS":
       headers = ["ID","ExpId","Type","DataUrl","ActeurEmail","Timestamp"]; break;
+    case "PHOTOS_CHARGEMENT":
+      headers = ["ID","ExpId","Type","FileId","FileUrl","FolderId","FolderUrl",
+                 "Nom","ActeurEmail","ActeurNom","Timestamp","Supprime"]; break;
     case "FLOTTE_CHAUFFEURS":
       headers = ["ID","Nom","Plaque","Site","Telephone","Actif"];
       // Seed avec les 9 chauffeurs historiques (issus de l'XLSX)
@@ -1266,6 +1288,9 @@ function serializeExp(e) {
     dateLivraisonPrevue: e.DATE_LIVRAISON_PREVUE || null,
     chauffeurFlotteId: e.CHAUFFEUR_FLOTTE_ID || null,
     confirmeNav: e.CONFIRME_NAV === true || e.CONFIRME_NAV === "TRUE" || e.CONFIRME_NAV === "VRAI",
+    // Photos de chargement (Drive)
+    nbPhotosChargement: (getPhotosIndex_()[e.ID] || {}).n || 0,
+    dossierPhotosUrl: (getPhotosIndex_()[e.ID] || {}).folderUrl || null,
   };
 }
 
@@ -1473,6 +1498,207 @@ function getMedias(params) {
     id: m.ID, expId: m.EXP_ID, type: m.TYPE,
     dataUrl: m.DATA_URL, acteurEmail: m.ACTEUR_EMAIL, timestamp: m.TIMESTAMP,
   }));
+}
+
+// ─── PHOTOS DE CHARGEMENT → GOOGLE DRIVE ──────────────────────────────────────
+//
+// Pourquoi : protéger les livreurs contre les contestations clients ("je n'ai pas reçu
+// toute ma marchandise"). Chaque photo est classée dans Drive sous le N° d'expédition :
+//   <racine> / aaaa-mm / <N° commande NAV> - <client> - <N° expédition> / <fichiers .jpg>
+// La feuille PHOTOS_CHARGEMENT ne garde que les liens (pas les images).
+// ⚠ Le script doit être autorisé pour Drive : exécuter une fois testDrive() dans l'éditeur.
+
+var _photosIndexCache = null;
+
+/** Index { expId: { n, folderUrl } } des photos Drive (n = photos "chargement" non retirées). */
+function getPhotosIndex_() {
+  if (_photosIndexCache) return _photosIndexCache;
+  const idx = {};
+  const sh = getSheet("PHOTOS_CHARGEMENT");
+  if (sh && sh.getLastRow() > 1) {
+    sheetToObjects(sh, COL_PHC).forEach(function(r) {
+      if (!r.EXP_ID || r.SUPPRIME) return;
+      if (!idx[r.EXP_ID]) idx[r.EXP_ID] = { n: 0, folderUrl: "" };
+      if (r.TYPE === "chargement") idx[r.EXP_ID].n++;
+      if (r.FOLDER_URL && !idx[r.EXP_ID].folderUrl) idx[r.EXP_ID].folderUrl = r.FOLDER_URL;
+    });
+  }
+  _photosIndexCache = idx;
+  return idx;
+}
+
+function countPhotosChargement_(expId) {
+  _photosIndexCache = null; // toujours frais pour les contrôles bloquants
+  return (getPhotosIndex_()[expId] || {}).n || 0;
+}
+
+function safeDriveName_(s, max) {
+  return String(s || "").replace(/[\\\/:*?"<>|#%\[\]]+/g, "-").replace(/\s+/g, " ").trim().substring(0, max || 60);
+}
+
+function getPhotosRootFolder_() {
+  const props = PropertiesService.getScriptProperties();
+  const id = CONFIG.DRIVE_ROOT_FOLDER_ID || props.getProperty("DRIVE_ROOT_ID");
+  if (id) {
+    try { return DriveApp.getFolderById(id); } catch (e) { /* dossier supprimé → on recrée */ }
+  }
+  const it = DriveApp.getFoldersByName(CONFIG.DRIVE_ROOT_NAME);
+  const f = it.hasNext() ? it.next() : DriveApp.createFolder(CONFIG.DRIVE_ROOT_NAME);
+  props.setProperty("DRIVE_ROOT_ID", f.getId());
+  return f;
+}
+
+function getOrCreateSubFolder_(parent, name) {
+  const it = parent.getFoldersByName(name);
+  return it.hasNext() ? it.next() : parent.createFolder(name);
+}
+
+/** Dossier Drive de l'expédition (créé au premier besoin, réutilisé ensuite). */
+function getExpPhotosFolder_(exp) {
+  // 1) déjà connu dans la feuille ?
+  const sh = getSheet("PHOTOS_CHARGEMENT");
+  if (sh.getLastRow() > 1) {
+    const known = sheetToObjects(sh, COL_PHC).find(function(r) { return r.EXP_ID === exp.ID && r.FOLDER_ID; });
+    if (known) {
+      try { return DriveApp.getFolderById(known.FOLDER_ID); } catch (e) { /* supprimé → recréer */ }
+    }
+  }
+  // 2) sinon création sous verrou (évite deux dossiers si 2 photos arrivent en même temps)
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const root = getPhotosRootFolder_();
+    const cmd = (getCmdsCache()[exp.CMD_ID]) || {};
+    const month = Utilities.formatDate(new Date(), "Africa/Dakar", "yyyy-MM");
+    const monthFolder = getOrCreateSubFolder_(root, month);
+    const ref = safeDriveName_(exp.NUM_CMD_NAV_LOCAL || cmd.NUM_CMD_NAV || "SANS-CMD", 50);
+    const client = safeDriveName_(cmd.NOM_CLIENT || "client", 40);
+    const numExp = safeDriveName_(exp.NUM_EXPEDITION || String(exp.ID).substring(0, 8), 20);
+    const name = ref + " - " + client + " - " + numExp;
+    const folder = getOrCreateSubFolder_(monthFolder, name);
+    folder.setDescription("Expédition " + exp.ID + " — commande(s) " + (exp.NUM_CMD_NAV_LOCAL || cmd.NUM_CMD_NAV || "") +
+      " — client " + (cmd.NOM_CLIENT || ""));
+    return folder;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Enregistre une photo (data URL JPEG) dans Drive + une ligne de traçabilité.
+ * type : "chargement" (livreur, avant le garde) | "sortie_garde" (garde, à la sortie).
+ */
+function savePhotoToDrive_(exp, dataUrl, type, acteurEmail, acteurNom) {
+  const comma = String(dataUrl).indexOf(",");
+  if (comma < 0 || String(dataUrl).indexOf("data:image/") !== 0) throw new Error("Image invalide");
+  const mime = String(dataUrl).substring(5, String(dataUrl).indexOf(";")) || "image/jpeg";
+  const bytes = Utilities.base64Decode(String(dataUrl).substring(comma + 1));
+  if (bytes.length < 1000) throw new Error("Image vide ou corrompue");
+
+  const folder = getExpPhotosFolder_(exp);
+  const cmd = (getCmdsCache()[exp.CMD_ID]) || {};
+  const ref = safeDriveName_((exp.NUM_CMD_NAV_LOCAL || cmd.NUM_CMD_NAV || "CMD").split(/[\/,]/)[0], 30);
+
+  const sh = getSheet("PHOTOS_CHARGEMENT");
+  const deja = sh.getLastRow() > 1
+    ? sheetToObjects(sh, COL_PHC).filter(function(r) { return r.EXP_ID === exp.ID && r.TYPE === type; }).length
+    : 0;
+  const ts = now();
+  const hms = Utilities.formatDate(new Date(), "Africa/Dakar", "HHmmss");
+  const ext = mime.indexOf("png") >= 0 ? "png" : "jpg";
+  const nom = ref + "_" + type + "_" + ("0" + (deja + 1)).slice(-2) + "_" + hms + "." + ext;
+
+  const file = folder.createFile(Utilities.newBlob(bytes, mime, nom));
+  file.setDescription("Expédition " + exp.ID + " — " + type + " — " + (acteurNom || acteurEmail || "") + " — " + ts);
+
+  const id = genId();
+  sh.appendRow([id, exp.ID, type, file.getId(), file.getUrl(), folder.getId(), folder.getUrl(),
+                nom, acteurEmail || "", acteurNom || "", ts, ""]);
+  _photosIndexCache = null;
+  return { id: id, fileUrl: file.getUrl(), folderUrl: folder.getUrl(), nom: nom };
+}
+
+/**
+ * Ajoute UNE photo de chargement (appelée photo par photo depuis le téléphone :
+ * une photo envoyée est une photo sauvegardée, même si le réseau coupe ensuite).
+ */
+function addPhotoChargement(params) {
+  const { expId, dataUrl, acteurEmail, acteurNom } = params;
+  if (!expId || !dataUrl || !acteurEmail) throw new Error("expId, dataUrl et acteurEmail requis");
+
+  const exp = sheetToObjects(getSheet("EXPEDITIONS"), COL_EXP).find(function(e) { return e.ID === expId; });
+  if (!exp) throw new Error("Expédition non trouvée");
+  if (exp.STATUT !== "en_chargement" && exp.STATUT !== "pret_sortie") {
+    throw new Error("Les photos de chargement se prennent pendant le chargement (avant la sortie du site).");
+  }
+  if (countPhotosChargement_(expId) >= CONFIG.PHOTOS_CHARGEMENT_MAX) {
+    throw new Error("Maximum " + CONFIG.PHOTOS_CHARGEMENT_MAX + " photos atteint.");
+  }
+
+  const r = savePhotoToDrive_(exp, dataUrl, "chargement", acteurEmail, acteurNom);
+  return { ok: true, id: r.id, fileUrl: r.fileUrl, folderUrl: r.folderUrl, count: countPhotosChargement_(expId) };
+}
+
+/** Liste des photos Drive d'une expédition (liens, pas d'images). */
+function getPhotosChargement(params) {
+  const expId = params && params.expId;
+  if (!expId) throw new Error("expId requis");
+  const sh = getSheet("PHOTOS_CHARGEMENT");
+  const rows = sh.getLastRow() > 1 ? sheetToObjects(sh, COL_PHC).filter(function(r) { return r.EXP_ID === expId && !r.SUPPRIME; }) : [];
+  return {
+    expId: expId,
+    folderUrl: rows.length ? rows[0].FOLDER_URL : null,
+    min: CONFIG.PHOTOS_CHARGEMENT_MIN,
+    max: CONFIG.PHOTOS_CHARGEMENT_MAX,
+    photos: rows.map(function(r) {
+      return { id: r.ID, type: r.TYPE, fileUrl: r.FILE_URL, nom: r.NOM, acteurNom: r.ACTEUR_NOM, timestamp: r.TIMESTAMP };
+    }),
+  };
+}
+
+/** Retire une photo de chargement (floue, mauvais angle) — uniquement avant la sortie. Mise à la corbeille Drive, tracée. */
+function deletePhotoChargement(params) {
+  const { photoId, acteurEmail, acteurNom } = params;
+  if (!photoId || !acteurEmail) throw new Error("photoId et acteurEmail requis");
+  const sh = getSheet("PHOTOS_CHARGEMENT");
+  const row = findRow(sh, COL_PHC.ID, photoId);
+  if (row < 0) throw new Error("Photo introuvable");
+  const r = sheetToObjects(sh, COL_PHC).find(function(x) { return x.ID === photoId; });
+  if (!r || r.SUPPRIME) throw new Error("Photo introuvable");
+  if (r.TYPE !== "chargement") throw new Error("Seules les photos de chargement peuvent être retirées");
+  const exp = sheetToObjects(getSheet("EXPEDITIONS"), COL_EXP).find(function(e) { return e.ID === r.EXP_ID; });
+  if (!exp || (exp.STATUT !== "en_chargement" && exp.STATUT !== "pret_sortie")) {
+    throw new Error("La sortie est validée : les photos ne peuvent plus être retirées.");
+  }
+  try { DriveApp.getFileById(r.FILE_ID).setTrashed(true); } catch (e) { /* déjà supprimée */ }
+  const ts = now();
+  sh.getRange(row, COL_PHC.SUPPRIME).setValue(ts);
+  addEvenement(r.EXP_ID, "PHOTO_RETIREE", acteurEmail, acteurNom, ts, "Photo retirée : " + r.NOM);
+  _photosIndexCache = null;
+  return { ok: true, count: countPhotosChargement_(r.EXP_ID) };
+}
+
+/** Le livreur a fini ses photos : jalon tracé dans EVENEMENTS (visible dans l'historique de l'expédition). */
+function terminerPhotosChargement(params) {
+  const { expId, acteurEmail, acteurNom } = params;
+  if (!expId || !acteurEmail) throw new Error("expId et acteurEmail requis");
+  const n = countPhotosChargement_(expId);
+  if (CONFIG.PHOTOS_CHARGEMENT_OBLIGATOIRES && n < CONFIG.PHOTOS_CHARGEMENT_MIN) {
+    throw new Error("Il faut au moins " + CONFIG.PHOTOS_CHARGEMENT_MIN + " photos (" + n + " prise(s)).");
+  }
+  const folderUrl = (getPhotosIndex_()[expId] || {}).folderUrl || "";
+  addEvenement(expId, "PHOTOS_CHARGEMENT", acteurEmail, acteurNom, now(), n + " photo(s) du chargement — " + folderUrl);
+  return { ok: true, count: n, folderUrl: folderUrl };
+}
+
+/**
+ * À EXÉCUTER UNE FOIS depuis l'éditeur Apps Script (menu Exécuter → testDrive)
+ * pour autoriser l'accès à Google Drive et créer le dossier racine.
+ */
+function testDrive() {
+  const f = getPhotosRootFolder_();
+  Logger.log("Dossier racine Drive : " + f.getUrl());
+  return f.getUrl();
 }
 
 /**
@@ -1706,7 +1932,7 @@ function createReliquatExpedition(expOrigine, cmd, commandesRestantes, ts) {
  * Accepte le statut "en_chargement" (v3) ET "pret_sortie" (v2 rétrocompat).
  */
 function jalonSortieSite(params) {
-  const { expId, acteurEmail, acteurNom, photosVehiculeUrls } = params;
+  const { expId, acteurEmail, acteurNom, photosVehiculeUrls, derogationMotif } = params;
   if (!expId || !acteurEmail) throw new Error("expId et acteurEmail requis");
 
   const sh = getSheet("EXPEDITIONS");
@@ -1727,6 +1953,21 @@ function jalonSortieSite(params) {
     throw new Error("Au moins une photo du véhicule chargé est obligatoire");
   }
 
+  // Photos de chargement (prises par le livreur avant le poste de garde) :
+  // obligatoires, sauf dérogation motivée du garde (tracée dans EVENEMENTS).
+  if (CONFIG.PHOTOS_CHARGEMENT_OBLIGATOIRES) {
+    const nbPhc = countPhotosChargement_(expId);
+    if (nbPhc < CONFIG.PHOTOS_CHARGEMENT_MIN) {
+      const derog = String(derogationMotif || "").trim();
+      if (!derog) {
+        throw new Error("Photos de chargement manquantes (" + nbPhc + "/" + CONFIG.PHOTOS_CHARGEMENT_MIN +
+          ") — le livreur doit photographier les articles chargés avant la sortie.");
+      }
+      addEvenement(expId, "DEROGATION_PHOTOS", acteurEmail, acteurNom, now(),
+        "Sortie sans photos de chargement suffisantes (" + nbPhc + "/" + CONFIG.PHOTOS_CHARGEMENT_MIN + ") — motif : " + derog);
+    }
+  }
+
   const ts = now();
   const duree = dureeMin(exp.T0, ts);
   const enRetard = duree !== null && duree > CONFIG.DELAI_MAX_MIN;
@@ -1740,6 +1981,14 @@ function jalonSortieSite(params) {
   photos.forEach(function(dataUrl) {
     addMediaInternal(expId, "vehicule_charge", dataUrl, acteurEmail, ts);
   });
+  // Copie dans Drive (dossier de l'expédition). Un échec Drive ne doit jamais bloquer la sortie.
+  try {
+    photos.forEach(function(dataUrl) {
+      savePhotoToDrive_(exp, dataUrl, "sortie_garde", acteurEmail, acteurNom);
+    });
+  } catch (errDrive) {
+    addEvenement(expId, "ERREUR_DRIVE", acteurEmail, acteurNom, ts, "Copie Drive des photos de sortie impossible : " + errDrive.message);
+  }
 
   // Enrichir avec email commercial pour notification
   const shCmdS = getSheet("COMMANDES");

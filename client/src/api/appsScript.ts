@@ -30,6 +30,7 @@ import type {
   TypeMouvement,
   MotifRetard,
   MotifRetardFlotte,
+  PhotoChargement,
   Utilisateur,
 } from "@/types/domain";
 
@@ -218,10 +219,13 @@ export const jalons = {
       reliquat: { id: string; numCmdNav: string; codeRetrait: string; zone: string } | null;
     }>("jalon_saisie_code", { expId, ...ctx }),
 
-  /** Sortie site avec photos véhicule chargé (au moins 1, plusieurs autorisées) */
+  /**
+   * Sortie site avec photos véhicule chargé (au moins 1, plusieurs autorisées).
+   * `derogationMotif` : requis si les photos de chargement du livreur sont insuffisantes.
+   */
   sortieSite: (
     expId: string,
-    ctx: ActeurContext & { photosVehiculeUrls: string[] },
+    ctx: ActeurContext & { photosVehiculeUrls: string[]; derogationMotif?: string },
   ) =>
     apiPost<{ ok: true; tSortieSite: string; dureeMin: number; enRetard: boolean; nbPhotos: number }>(
       "jalon_sortie_site",
@@ -320,6 +324,27 @@ export const medias = {
     apiGet<Media[]>("getMedias", type ? { expId, type } : { expId }),
   add: (input: { expId: string; type: string; dataUrl: string; acteurEmail: string }) =>
     apiPost<{ ok: true; id: string }>("addMedia", input),
+};
+
+// ─── Photos de chargement (Google Drive) ─────────────────────────────────────
+
+export const photos = {
+  /** Envoie UNE photo (data URL) → enregistrée dans le dossier Drive de l'expédition */
+  add: (input: { expId: string; dataUrl: string; acteurEmail: string; acteurNom: string }) =>
+    apiPost<{ ok: true; id: string; fileUrl: string; folderUrl: string; count: number }>(
+      "addPhotoChargement",
+      input,
+    ),
+  list: (expId: string) =>
+    apiGet<{ expId: string; folderUrl: string | null; min: number; max: number; photos: PhotoChargement[] }>(
+      "getPhotosChargement",
+      { expId },
+    ),
+  remove: (input: { photoId: string; acteurEmail: string; acteurNom: string }) =>
+    apiPost<{ ok: true; count: number }>("deletePhotoChargement", input),
+  /** Le livreur a terminé : trace le jalon dans l'historique */
+  terminer: (input: { expId: string; acteurEmail: string; acteurNom: string }) =>
+    apiPost<{ ok: true; count: number; folderUrl: string }>("terminerPhotosChargement", input),
 };
 
 // ─── Utilitaires ─────────────────────────────────────────────────────────────
@@ -439,6 +464,7 @@ export const api = {
   referentiels,
   kpi,
   medias,
+  photos,
   utils,
   // Module flotte interne
   flotteChauffeurs,
