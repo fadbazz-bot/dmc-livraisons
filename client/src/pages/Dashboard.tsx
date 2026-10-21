@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart,
@@ -12,7 +12,10 @@ import {
 } from "recharts";
 import { BarChart3, Target, Clock, Package, AlertCircle, RefreshCw } from "lucide-react";
 import { api } from "@/api/appsScript";
-import { DateRange } from "@/pages/flotte/Effectuees";
+import { PeriodeSelect, SiteMagasinSelect } from "@/components/FiltresPortee";
+import { periodeDepuisPreset, type Periode } from "@/lib/periode";
+import { porteeDe } from "@/lib/portee";
+import { useAuth } from "@/lib/auth";
 import { formatDuree, kpiColorClass } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
@@ -21,16 +24,29 @@ import { cn } from "@/lib/cn";
  * S'appuie sur l'endpoint getKpi du backend (déjà existant).
  */
 export default function DashboardPage() {
-  const today = new Date().toISOString().slice(0, 10);
-  const [dateDebut, setDateDebut] = useState(
-    new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
-  );
-  const [dateFin, setDateFin] = useState(today);
-  const [site, setSite] = useState<string>("");
+  const { user } = useAuth();
+  const portee = useMemo(() => porteeDe(user), [user]);
+  const [periode, setPeriode] = useState<Periode>(() => periodeDepuisPreset("30"));
+  const [siteChoisi, setSite] = useState<string>("");
+  const [zoneChoisie, setZone] = useState<string>("");
+  // Les droits priment toujours sur le choix affiché
+  const site = portee.siteFixe ?? siteChoisi;
+  const zone = portee.zoneFixe ?? zoneChoisie;
+  const aujourdhui = new Date().toISOString().slice(0, 10);
+  const dateDebut = periode.debut || "2000-01-01";
+  const dateFin = periode.fin || aujourdhui;
 
   const { data: kpi, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ["kpi-global", dateDebut, dateFin, site],
-    queryFn: () => api.kpi.get({ dateDebut, dateFin, site: site || undefined }),
+    queryKey: ["kpi-global", dateDebut, dateFin, site, zone, user?.email],
+    queryFn: () =>
+      api.kpi.get({
+        dateDebut,
+        dateFin,
+        site: site || undefined,
+        magasin: zone || undefined,
+        acteurEmail: user?.email,
+      }),
+    enabled: !!user,
   });
 
   return (
@@ -44,21 +60,8 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <select
-              value={site}
-              onChange={(e) => setSite(e.target.value)}
-              className="input py-1.5 px-2 w-36 text-sm"
-            >
-              <option value="">Tous les sites</option>
-              <option value="Dakar">Dakar</option>
-              <option value="Diamniadio">Diamniadio</option>
-            </select>
-            <DateRange
-              dateDebut={dateDebut}
-              dateFin={dateFin}
-              onDebut={setDateDebut}
-              onFin={setDateFin}
-            />
+            <SiteMagasinSelect portee={portee} site={site} zone={zone} onSite={setSite} onZone={setZone} />
+            <PeriodeSelect value={periode} onChange={setPeriode} />
             <button onClick={() => refetch()} disabled={isFetching} className="btn-outline gap-1.5">
               <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
               <span className="hidden sm:inline">Rafraîchir</span>

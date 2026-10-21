@@ -314,7 +314,7 @@ export const referentiels = {
 // ─── KPI ─────────────────────────────────────────────────────────────────────
 
 export const kpi = {
-  get: (params: { dateDebut: string; dateFin: string; site?: string; zone?: string }) =>
+  get: (params: { dateDebut: string; dateFin: string; site?: string; zone?: string; magasin?: string; acteurEmail?: string }) =>
     apiGet<Kpi>("getKpi", params),
 };
 

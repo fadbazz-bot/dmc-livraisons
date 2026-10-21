@@ -1072,7 +1072,9 @@ function getExpeditions(params) {
       return u.EMAIL && u.EMAIL.toLowerCase() === String(params.acteurEmail).toLowerCase();
     });
     if (acteur) {
-      if (acteur.ROLE === "chef_poste" && acteur.SITE) {
+      if (acteur.ROLE === "controleur" && acteur.SITE) {
+        exps = exps.filter(function(e) { return zoneToSite(e.ZONE) === acteur.SITE; });
+      } else if (acteur.ROLE === "chef_poste" && acteur.SITE) {
         exps = exps.filter(function(e) { return zoneToSite(e.ZONE) === acteur.SITE; });
       } else if (acteur.ROLE === "agent_showroom" && acteur.SITE) {
         // Agent showroom : cloisonné à son site ET uniquement aux commandes Showroom
@@ -1105,7 +1107,7 @@ function getExpeditions(params) {
           exps = exps.filter(function(e) { return zoneToSite(e.ZONE) === acteur.SITE; });
         }
       }
-      // admin, controleur, commercial, chef_flotte : pas de filtre serveur (voient tout)
+      // admin, commercial, chef_flotte : pas de filtre serveur (voient tout)
     }
   }
 
@@ -3143,8 +3145,20 @@ function deleteMotifRetard(params) {
 function getKpi(params) {
   const dateDebut = params.dateDebut || new Date().toISOString().slice(0,10);
   const dateFin   = params.dateFin   || dateDebut;
-  const site      = params.site || null;
+  let site        = params.site || null;
   const zone      = params.zone || null;
+  let magasin     = params.magasin || null; // type de magasin : Parc / Dépôt / Showroom / SAV (tolérant sur le libellé)
+
+  // Droits : un contrôleur voit son site ; un responsable voit son site et son type de magasin.
+  if (params.acteurEmail) {
+    const acteurKpi = sheetToObjects(getSheet("UTILISATEURS"), COL_USR).find(function(u) {
+      return u.ACTIF && u.EMAIL && u.EMAIL.toLowerCase() === String(params.acteurEmail).toLowerCase();
+    });
+    if (acteurKpi && (acteurKpi.ROLE === "controleur" || acteurKpi.ROLE === "responsable")) {
+      if (acteurKpi.SITE) site = acteurKpi.SITE;
+      if (acteurKpi.ROLE === "responsable" && ncCategorieZone_(acteurKpi.ZONE) !== "autre") magasin = acteurKpi.ZONE;
+    }
+  }
 
   const sh = getSheet("EXPEDITIONS");
   let exps = sheetToObjects(sh, COL_EXP);
@@ -3166,6 +3180,10 @@ function getKpi(params) {
     exps = exps.filter(e => cmdSite.has(e.CMD_ID));
   }
   if (zone) exps = exps.filter(e => e.ZONE === zone);
+  if (magasin) {
+    const catMag = ncCategorieZone_(magasin);
+    exps = exps.filter(e => ncCategorieZone_(e.ZONE) === catMag);
+  }
 
   // Bug #1 fix : T3 n'existe plus dans le schéma v2, c'est T_SORTIE_SITE
   const total = exps.length;

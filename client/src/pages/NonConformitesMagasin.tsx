@@ -13,16 +13,13 @@ import { Modal } from "@/components/Modal";
 import { PageHeader } from "@/components/PageHeader";
 import { PhotoCapture } from "@/components/PhotoCapture";
 import { MAGASINS } from "@/types/magasins";
+import { PeriodeSelect, SiteMagasinSelect } from "@/components/FiltresPortee";
+import { dansPeriode, periodeDepuisPreset, type Periode } from "@/lib/periode";
+import { memeMagasin, porteeDe } from "@/lib/portee";
 import { formatDateTime, formatRelative } from "@/lib/format";
 import { cn, includesLower } from "@/lib/cn";
 
 type Onglet = "expliquer" | "decider" | "actions" | "cloturees" | "suivi";
-
-const PERIODES = [
-  { jours: 30, label: "30 jours" },
-  { jours: 90, label: "90 jours" },
-  { jours: 365, label: "12 mois" },
-];
 
 const STATUT_LABEL: Record<NcStatut, string> = {
   ouverte: "À expliquer",
@@ -93,12 +90,17 @@ export default function NonConformitesMagasinPage() {
   const [onglet, setOnglet] = useState<Onglet>(estControleur ? "decider" : "expliquer");
   const [recherche, setRecherche] = useState("");
   const [type, setType] = useState("");
-  const [site, setSite] = useState("");
-  const [jours, setJours] = useState(90);
+  const portee = useMemo(() => porteeDe(user), [user]);
+  const [siteChoisi, setSite] = useState("");
+  const [zoneChoisie, setZone] = useState("");
+  // Les droits priment toujours sur le choix affiché
+  const site = portee.siteFixe ?? siteChoisi;
+  const zone = portee.zoneFixe ?? zoneChoisie;
+  const [periode, setPeriode] = useState<Periode>(() => periodeDepuisPreset("90"));
   const [ouvert, setOuvert] = useState<string | null>(null);
   const [nouveau, setNouveau] = useState(false);
 
-  const depuis = useMemo(() => isoJour(new Date(Date.now() - jours * 86400000)), [jours]);
+  const depuis = periode.debut || "2000-01-01";
 
   const q = useQuery({
     queryKey: ["non-conformites", email, depuis],
@@ -114,13 +116,15 @@ export default function NonConformitesMagasinPage() {
       toutes.filter((n) => {
         if (type && n.type !== type) return false;
         if (site && n.site !== site) return false;
+        if (zone && !memeMagasin(n.zone, zone)) return false;
+        if (!dansPeriode(n.creeLe, periode)) return false;
         if (recherche.trim()) {
           const r = recherche.trim();
           if (![n.numCmd, n.client, n.zone, n.detail, n.typeLabel, n.responsableEmail].some((c) => includesLower(c, r))) return false;
         }
         return true;
       }),
-    [toutes, type, site, recherche],
+    [toutes, type, site, zone, periode, recherche],
   );
 
   const parOnglet = useMemo(() => {
@@ -131,7 +135,11 @@ export default function NonConformitesMagasinPage() {
 
   const retards = useMemo(() => toutes.filter((n) => n.enRetardJustif).length, [toutes]);
   const actionsRetard = useMemo(() => toutes.filter((n) => n.enRetardAction).length, [toutes]);
-  const sites = useMemo(() => Array.from(new Set(toutes.map((n) => n.site).filter(Boolean))).sort(), [toutes]);
+  // Non-conformités encore ouvertes mais masquées par les filtres actifs (période, site, magasin…)
+  const masquees = useMemo(
+    () => toutes.filter((n) => n.statut !== "cloturee" && !filtrees.includes(n)).length,
+    [toutes, filtrees],
+  );
   const fiche = ouvert ? toutes.find((n) => n.id === ouvert) ?? null : null;
 
   if (!autorise) {
@@ -205,15 +213,8 @@ export default function NonConformitesMagasinPage() {
               <option key={t.code} value={t.code}>{t.label}</option>
             ))}
           </select>
-          {sites.length > 1 && (
-            <select className="input w-auto" value={site} onChange={(e) => setSite(e.target.value)} aria-label="Site">
-              <option value="">Tous les sites</option>
-              {sites.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          )}
-          <select className="input w-auto" value={jours} onChange={(e) => setJours(Number(e.target.value))} aria-label="Période des clôturées">
-            {PERIODES.map((p) => <option key={p.jours} value={p.jours}>{p.label}</option>)}
-          </select>
+          <SiteMagasinSelect portee={portee} site={site} zone={zone} onSite={setSite} onZone={setZone} />
+          <PeriodeSelect value={periode} onChange={setPeriode} />
         </div>
         <div className="flex gap-1 overflow-x-auto -mb-3 pb-0">
           {onglets.map((o) => (
@@ -238,6 +239,11 @@ export default function NonConformitesMagasinPage() {
       </PageHeader>
 
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+        {masquees > 0 && (
+          <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            {masquees} non-conformité(s) encore ouverte(s) sont masquées par les filtres (période, site, magasin ou type).
+          </div>
+        )}
         {q.isLoading ? (
           <div className="card p-6 text-center text-sm text-slate-500">Chargement…</div>
         ) : q.error ? (
@@ -245,7 +251,7 @@ export default function NonConformitesMagasinPage() {
             {q.error instanceof Error ? q.error.message : "Erreur"}
           </div>
         ) : onglet === "suivi" ? (
-          <Suivi liste={filtrees} jours={jours} />
+          <Suivi liste={filtrees} periode={periode} />
         ) : liste.length === 0 ? (
           <div className="card p-10 text-center text-sm text-slate-500">
             <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-emerald-500" />
@@ -670,7 +676,7 @@ function compter(items: string[]): { label: string; n: number }[] {
   return [...m.entries()].map(([label, n]) => ({ label, n })).sort((a, b) => b.n - a.n);
 }
 
-function Suivi({ liste, jours }: { liste: NonConformite[]; jours: number }) {
+function Suivi({ liste, periode }: { liste: NonConformite[]; periode: Periode }) {
   const stats = useMemo(() => {
     const total = liste.length;
     const cloturees = liste.filter((n) => n.statut === "cloturee");
@@ -697,7 +703,10 @@ function Suivi({ liste, jours }: { liste: NonConformite[]; jours: number }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-slate-500">Non-conformités ouvertes ou clôturées sur les {jours} derniers jours (filtres actifs appliqués).</p>
+      <p className="text-xs text-slate-500">
+        Non-conformités ouvertes dans la période
+        {periode.debut ? ` du ${periode.debut}` : ""}{periode.fin ? ` au ${periode.fin}` : ""} (filtres actifs appliqués).
+      </p>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Kpi titre="Total" valeur={stats.total} />
         <Kpi titre="Ouvertes" valeur={stats.ouvertes} />

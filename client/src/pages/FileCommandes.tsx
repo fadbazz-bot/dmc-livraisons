@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { PeriodeSelect, Verrou } from "@/components/FiltresPortee";
+import { dansPeriode, periodeDepuisPreset, periodeDepuisSauvegarde, type Periode } from "@/lib/periode";
+import { memeMagasin, porteeDe } from "@/lib/portee";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Search, RefreshCw, KeyRound, FileText, X, Plus, SlidersHorizontal, Clock, User, Truck, Hash, Camera } from "lucide-react";
@@ -16,15 +19,7 @@ import { cacheSet, persistedCache } from "@/lib/persistentCache";
 
 // ─── Filtres ────────────────────────────────────────────────────────────────
 
-type Periode = "today" | "7" | "30" | "all";
 type Tri = "recent" | "ancien";
-
-const PERIODES: { value: Periode; label: string }[] = [
-  { value: "today", label: "Aujourd'hui" },
-  { value: "7", label: "7 jours" },
-  { value: "30", label: "30 jours" },
-  { value: "all", label: "Tout" },
-];
 
 const STATUTS: { value: StatutExpedition | "all"; label: string }[] = [
   { value: "all", label: "Toutes" },
@@ -45,10 +40,12 @@ interface Prefs {
 }
 
 function lirePrefs(): Prefs {
-  const defaut: Prefs = { periode: "7", tri: "recent", mes: false };
+  const defaut: Prefs = { periode: periodeDepuisPreset("7"), tri: "recent", mes: false };
   try {
     const raw = localStorage.getItem(PREFS_KEY);
-    return raw ? { ...defaut, ...JSON.parse(raw) } : defaut;
+    if (!raw) return defaut;
+    const p = JSON.parse(raw);
+    return { ...defaut, ...p, periode: periodeDepuisSauvegarde(p.periode, "7") };
   } catch {
     return defaut;
   }
@@ -56,12 +53,6 @@ function lirePrefs(): Prefs {
 
 function siteDe(zone: string): "Dakar" | "Diamniadio" {
   return String(zone || "").toLowerCase().includes("diamniadio") ? "Diamniadio" : "Dakar";
-}
-
-function debutPeriode(p: Periode): string {
-  if (p === "all") return "";
-  const jours = p === "today" ? 0 : Number(p) - 1;
-  return new Date(Date.now() - jours * 86400000).toISOString().slice(0, 10);
 }
 
 // ─── Page ───────────────────────────────────────────────────────────────────
@@ -73,10 +64,14 @@ export default function FileCommandesPage() {
   const [search, setSearch] = useState("");
   const [statut, setStatut] = useState<StatutExpedition | "all">("all");
   const [periode, setPeriode] = useState<Periode>(initial.periode);
+  const portee = useMemo(() => porteeDe(user), [user]);
   const [tri, setTri] = useState<Tri>(initial.tri);
   const [mes, setMes] = useState(initial.mes);
-  const [site, setSite] = useState("");
-  const [zone, setZone] = useState("");
+  const [siteChoisi, setSite] = useState("");
+  const [zoneChoisie, setZone] = useState("");
+  // Les droits priment toujours sur le choix affiché
+  const site = portee.siteFixe ?? siteChoisi;
+  const zone = portee.zoneFixe ?? zoneChoisie;
   const [commercial, setCommercial] = useState("");
   const [mode, setMode] = useState("");
   const [reliquats, setReliquats] = useState(false);
@@ -108,6 +103,9 @@ export default function FileCommandesPage() {
   const peutVoirCode = !!user && (user.role === "admin" || user.role === "commercial");
   const estCommercial = user?.role === "commercial";
 
+  const cloisonne = user?.role === "controleur" || user?.role === "responsable";
+  const cleCache = cloisonne ? `expeditions-file-${user?.email}` : "expeditions";
+
   const {
     data: exps = [],
     isLoading,
@@ -116,25 +114,25 @@ export default function FileCommandesPage() {
     isFetching,
     dataUpdatedAt,
   } = useQuery({
-    queryKey: ["expeditions"],
+    // Contrôleur / responsable : le serveur cloisonne selon le compte (site, magasin)
+    queryKey: ["expeditions", "file", cloisonne ? user?.email : "tous"],
     queryFn: async () => {
-      const res = await api.expeditions.list();
-      cacheSet("expeditions", res);
+      const res = await api.expeditions.list(cloisonne ? { acteurEmail: user?.email } : undefined);
+      cacheSet(cleCache, res);
       return res;
     },
-    ...persistedCache<Expedition[]>("expeditions"),
+    ...persistedCache<Expedition[]>(cleCache),
   });
 
   // Filtre « tout sauf le statut » : sert aussi à calculer les compteurs des pastilles
   const base = useMemo(() => {
-    const debut = debutPeriode(periode);
     const term = search.trim();
     const monEmail = (user?.email || "").toLowerCase();
     return exps.filter((e) => {
-      if (debut && jourISO(e.t0) < debut) return false;
+      if (!dansPeriode(e.t0, periode)) return false;
       if (mes && String(e.commercialEmail || "").toLowerCase() !== monEmail) return false;
       if (site && siteDe(e.zone) !== site) return false;
-      if (zone && e.zone !== zone) return false;
+      if (zone && e.zone !== zone && !(portee.zoneFixe && memeMagasin(e.zone, zone))) return false;
       if (commercial && e.commercialEmail !== commercial) return false;
       if (mode && (e.modeLivraison || "externe") !== mode) return false;
       if (reliquats && !e.expParentId) return false;
@@ -150,7 +148,7 @@ export default function FileCommandesPage() {
         includesLower(e.nomActeurCommercial, term)
       );
     });
-  }, [exps, periode, search, mes, site, zone, commercial, mode, reliquats, user?.email]);
+  }, [exps, periode, search, mes, site, zone, commercial, mode, reliquats, user?.email, portee.zoneFixe]);
 
   const compteurs = useMemo(() => {
     const c: Record<string, number> = { all: base.length };
@@ -190,14 +188,14 @@ export default function FileCommandesPage() {
     return Array.from(m.entries()).sort((a, b) => a[1].localeCompare(b[1]));
   }, [exps]);
 
-  const nbFiltresActifs = [site, zone, commercial, mode].filter(Boolean).length + (reliquats ? 1 : 0);
+  const nbFiltresActifs = [siteChoisi, zoneChoisie, commercial, mode].filter(Boolean).length + (reliquats ? 1 : 0);
   const filtreModifie =
-    nbFiltresActifs > 0 || !!search || statut !== "all" || mes || periode !== "7";
+    nbFiltresActifs > 0 || !!search || statut !== "all" || mes || periode.preset !== "7";
 
   function reinitialiser() {
     setSearch("");
     setStatut("all");
-    setPeriode("7");
+    setPeriode(periodeDepuisPreset("7"));
     setMes(false);
     setSite("");
     setZone("");
@@ -270,14 +268,25 @@ export default function FileCommandesPage() {
             {nbFiltresActifs > 0 && <span className="num">{nbFiltresActifs}</span>}
           </button>
 
-          <div className="max-w-full overflow-x-auto">
-            <Segment value={periode} options={PERIODES} onChange={setPeriode} label="Période" />
-          </div>
+          <PeriodeSelect value={periode} onChange={setPeriode} />
         </div>
 
         <div className={cn("flex-wrap items-center gap-2", filtresOuverts ? "flex" : "hidden md:flex")}>
-          <Select value={site} onChange={setSite} placeholder="Tous sites" options={["Dakar", "Diamniadio"].map((s) => [s, s])} />
-          <Select value={zone} onChange={setZone} placeholder="Tous magasins" options={zones.map((z) => [z, z])} />
+          {portee.siteFixe ? (
+            <Verrou texte={portee.siteFixe} />
+          ) : (
+            <Select value={siteChoisi} onChange={setSite} placeholder="Tous sites" options={["Dakar", "Diamniadio"].map((s) => [s, s])} />
+          )}
+          {portee.zoneFixe ? (
+            <Verrou texte={portee.zoneFixe} />
+          ) : (
+            <Select
+              value={zoneChoisie}
+              onChange={setZone}
+              placeholder="Tous magasins"
+              options={zones.filter((z) => !site || siteDe(z) === site).map((z) => [z, z])}
+            />
+          )}
           <Select value={commercial} onChange={setCommercial} placeholder="Tous commerciaux" options={commerciaux} />
           <Select
             value={mode}
@@ -365,7 +374,7 @@ export default function FileCommandesPage() {
           <div className="card mx-auto max-w-md p-10 text-center">
             <p className="font-medium text-slate-800">Aucune expédition ne correspond.</p>
             <p className="mt-1 text-sm text-slate-500">
-              {periode !== "all" ? "Essaie d'élargir la période ou de retirer un filtre." : "Retire un filtre pour voir plus de résultats."}
+              {periode.preset !== "all" ? "Essaie d'élargir la période ou de retirer un filtre." : "Retire un filtre pour voir plus de résultats."}
             </p>
             {filtreModifie && (
               <button onClick={reinitialiser} className="btn-outline mt-4">
@@ -417,36 +426,6 @@ export default function FileCommandesPage() {
 }
 
 // ─── Composants de page ─────────────────────────────────────────────────────
-
-function Segment<T extends string>({
-  value,
-  options,
-  onChange,
-  label,
-}: {
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (v: T) => void;
-  label: string;
-}) {
-  return (
-    <div className="inline-flex rounded-ctl bg-slate-100 p-0.5" role="group" aria-label={label}>
-      {options.map((o) => (
-        <button
-          key={o.value}
-          onClick={() => onChange(o.value)}
-          aria-pressed={value === o.value}
-          className={cn(
-            "rounded-[6px] px-3 py-1.5 text-sm font-medium transition-colors",
-            value === o.value ? "bg-white text-slate-900 shadow-card" : "text-slate-500 hover:text-slate-800",
-          )}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 function Select({
   value,
