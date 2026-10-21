@@ -41,6 +41,10 @@ const CONFIG = {
   PHOTOS_CHARGEMENT_OBLIGATOIRES: true,
   PHOTOS_CHARGEMENT_MIN:    3,    // minimum de photos avant la sortie du site
   PHOTOS_CHARGEMENT_MAX:    15,
+  // ── Arrivée du client au magasin (remplace le code PIN) ──
+  // Preuve = photo de la plaque (véhicule) ou "client à pied" (sans véhicule enregistré à l'entrée).
+  CODE_RETRAIT_ACTIF:       true, // période de transition : le code reste accepté. Passer à false pour le supprimer.
+  DELAI_MIN_TRAJET_MIN:     2,    // validation "au magasin" plus rapide que ça après l'entrée = alerte (hors client à pied)
 };
 
 // Colonnes feuille COMMANDES
@@ -1822,22 +1826,54 @@ function jalonChargementFini(params) {
 function jalonSaisieCode(params) {
   const { expId, acteurEmail, acteurNom, codeRetraitSaisi, commandesChargees } = params;
   if (!expId || !acteurEmail) throw new Error("expId et acteurEmail requis");
-  if (!codeRetraitSaisi) throw new Error("Code PIN de livraison obligatoire");
 
   const sh = getSheet("EXPEDITIONS");
   const exps = sheetToObjects(sh, COL_EXP);
   const exp = exps.find(e => e.ID === expId);
   if (!exp) throw new Error("Expédition non trouvée");
-  if (!exp.T_ENTREE_SITE) throw new Error("Le camion n'est pas encore entré sur le site");
-  if (exp.T_CHARGEMENT_FINI) throw new Error("Code déjà saisi — chargement en cours ou terminé");
+  if (!exp.T_ENTREE_SITE) throw new Error("Le client n'est pas encore entré sur le site");
+  if (exp.T_CHARGEMENT_FINI) throw new Error("Arrivée déjà validée — chargement en cours ou terminé");
 
-  // Vérification du code PIN
-  if (String(exp.CODE_RETRAIT).trim() !== String(codeRetraitSaisi).trim()) {
-    addEvenement(expId, "CODE_FAIL", acteurEmail, acteurNom, now(), "Tentative code PIN incorrect");
-    throw new Error("Code PIN incorrect — le chargement n'est pas autorisé");
+  // Preuve d'arrivée du client au magasin : "plaque" (photo) | "pieton" | "code" (transition)
+  const preuve = String(params.preuve || (codeRetraitSaisi ? "code" : "")).trim();
+  if (["plaque", "pieton", "code"].indexOf(preuve) === -1) {
+    throw new Error("Preuve d'arrivée manquante : photographie la plaque du véhicule, ou indique « client à pied ».");
+  }
+  let plaqueConforme = true;
+  let detailPreuve = "";
+
+  if (preuve === "code") {
+    if (!CONFIG.CODE_RETRAIT_ACTIF) throw new Error("Le code de livraison n'est plus utilisé — photographie la plaque du véhicule.");
+    if (!codeRetraitSaisi) throw new Error("Code PIN de livraison obligatoire");
+    if (String(exp.CODE_RETRAIT).trim() !== String(codeRetraitSaisi).trim()) {
+      addEvenement(expId, "CODE_FAIL", acteurEmail, acteurNom, now(), "Tentative code PIN incorrect");
+      throw new Error("Code PIN incorrect — le chargement n'est pas autorisé");
+    }
+    detailPreuve = "Code livraison validé — chargement enclenché";
+  } else if (preuve === "plaque") {
+    if (!exp.PLAQUE) throw new Error("Aucune plaque enregistrée à l'entrée : utilise « Client à pied » si le client est venu sans véhicule.");
+    if (!params.photoPlaqueMagasin) throw new Error("La photo de la plaque est obligatoire");
+    plaqueConforme = !(params.plaqueConforme === false || String(params.plaqueConforme) === "false");
+    const comm = String(params.commentaire || "").trim();
+    if (!plaqueConforme && !comm) throw new Error("Précise ce qui diffère (plaque différente de celle du poste de garde)");
+    // La photo est la preuve : Drive en priorité, sinon repli dans la feuille MEDIAS (ne bloque pas le chargement)
+    try {
+      savePhotoToDrive_(exp, params.photoPlaqueMagasin, "arrivee_magasin", acteurEmail, acteurNom);
+    } catch (errDrive) {
+      addMediaInternal(expId, "plaque_magasin", params.photoPlaqueMagasin, acteurEmail, now());
+      addEvenement(expId, "ERREUR_DRIVE", acteurEmail, acteurNom, now(), "Photo plaque au magasin stockée dans MEDIAS (Drive indisponible : " + errDrive.message + ")");
+    }
+    detailPreuve = plaqueConforme
+      ? "Véhicule au magasin — plaque photographiée et conforme (" + exp.PLAQUE + ") — chargement enclenché"
+      : "Véhicule au magasin — PLAQUE DIFFÉRENTE de celle du poste de garde (" + exp.PLAQUE + ") : " + comm;
+  } else { // pieton
+    if (exp.PLAQUE) throw new Error("Un véhicule a été enregistré à l'entrée : la photo de la plaque est requise.");
+    detailPreuve = "Client à pied — chargement enclenché";
   }
 
   const ts = now();
+  const delaiEntree = dureeMin(exp.T_ENTREE_SITE, ts);
+  const validationRapide = preuve !== "pieton" && delaiEntree !== null && delaiEntree < CONFIG.DELAI_MIN_TRAJET_MIN;
 
   // ── Gestion du chargement partiel (reliquat) ──────────────────────────────
   let reliquat = null;
@@ -1872,12 +1908,20 @@ function jalonSaisieCode(params) {
   updateExpCol(expId, COL_EXP.RESPONSABLE_EMAIL, acteurEmail);
   updateExpCol(expId, COL_EXP.NOM_ACTEUR_RESPONSABLE, acteurNom || acteurEmail);
   updateExpCol(expId, COL_EXP.STATUT, "en_chargement");
-  addEvenement(expId, "SAISIE_CODE", acteurEmail, acteurNom, ts, "Code livraison validé — chargement enclenché");
+  // Le jalon garde la clé SAISIE_CODE (compatibilité de l'historique) : il signifie désormais "client au magasin".
+  addEvenement(expId, "SAISIE_CODE", acteurEmail, acteurNom, ts, detailPreuve);
+  if (validationRapide) {
+    addEvenement(expId, "ALERTE_VALIDATION_RAPIDE", acteurEmail, acteurNom, ts,
+      "Arrivée au magasin validée " + delaiEntree + " min seulement après l'entrée au poste de garde (seuil " + CONFIG.DELAI_MIN_TRAJET_MIN + " min)");
+  }
+  if (!plaqueConforme) {
+    addEvenement(expId, "PLAQUE_DIFFERENTE", acteurEmail, acteurNom, ts, "Plaque au magasin différente de celle du poste de garde (" + exp.PLAQUE + ")");
+  }
 
-  notifySaisieCode(exp, acteurNom, ts);
+  notifySaisieCode(exp, acteurNom, ts, preuve, plaqueConforme, validationRapide ? delaiEntree : null);
   if (reliquat) notifyReliquatCree(exp, cmd, reliquat, acteurNom, ts);
 
-  return { ok: true, tSaisieCode: ts, reliquat: reliquat };
+  return { ok: true, tSaisieCode: ts, reliquat: reliquat, preuve: preuve, plaqueConforme: plaqueConforme };
 }
 
 /**
@@ -2061,14 +2105,16 @@ function jalonSortieShowroom(params) {
 /**
  * Notification Chat à la saisie du code livraison (v3)
  */
-function notifySaisieCode(exp, acteurNom, ts) {
+function notifySaisieCode(exp, acteurNom, ts, preuve, plaqueConforme, delaiRapide) {
   const heure = new Date(ts).toLocaleTimeString("fr-FR", {hour:"2-digit", minute:"2-digit"});
   const chefMention = exp.CHEF_POSTE_EMAIL ? mention(exp.CHEF_POSTE_EMAIL) : "";
   const FRONTEND_URL = "https://fadbazz-bot.github.io/dmc-livraisons/";
 
   sendChatMessage({
-    text: `🔓 *Code saisi — chargement en cours* — *${exp.NUM_EXPEDITION || exp.ID}* (${exp.ZONE})\n` +
-          `Validé à ${heure} par ${acteurNom}\n` +
+    text: `🔓 *Client au magasin — chargement en cours* — *${exp.NUM_EXPEDITION || exp.ID}* (${exp.ZONE})\n` +
+          `Validé à ${heure} par ${acteurNom} (${preuve === "plaque" ? "plaque photographiée" : preuve === "pieton" ? "client à pied" : "code"})\n` +
+          (plaqueConforme === false ? `⚠️ *Plaque différente de celle du poste de garde*\n` : "") +
+          (delaiRapide !== null && delaiRapide !== undefined ? `⚠️ Validation ${delaiRapide} min seulement après l'entrée — à vérifier\n` : "") +
           `Plaque : *${exp.PLAQUE || "—"}* · Chauffeur : ${exp.CHAUFFEUR || "—"}` +
           (chefMention ? `\n📣 ${chefMention} — préviens-moi quand le camion est chargé pour valider la sortie` : "") +
           `\n👉 ${FRONTEND_URL}`

@@ -1,10 +1,11 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, PackageCheck, PackageX } from "lucide-react";
+import { Camera, Check, Footprints, KeyRound, PackageCheck, PackageX, TriangleAlert } from "lucide-react";
 import { api } from "@/api/appsScript";
 import type { Expedition } from "@/types/domain";
 import { Modal } from "@/components/Modal";
 import { ExpInfoBlock } from "@/components/modals/ExpInfoBlock";
+import { PhotoCapture } from "@/components/PhotoCapture";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/Toast";
 import { cn } from "@/lib/cn";
@@ -23,9 +24,14 @@ function splitNumCmdNav(str: string): string[] {
     .filter(Boolean);
 }
 
+type Preuve = "plaque" | "pieton" | "code";
+
 /**
- * Action côté responsable magasin (flux v3) :
- * le client lui remet son code PIN, le responsable le saisit → chargement enclenché.
+ * Action côté responsable magasin :
+ * le client est arrivé chez lui → il le confirme par une PREUVE, et le chargement est enclenché.
+ *   - plaque : photo de la plaque du véhicule (comparée à celle saisie au poste de garde) ;
+ *   - pieton : client venu sans véhicule (uniquement si aucune plaque n'a été enregistrée à l'entrée) ;
+ *   - code   : ancien code PIN, conservé pendant la période de transition.
  *
  * Chargement partiel : si la demande regroupe plusieurs N° commande NAV et que
  * le véhicule ne peut pas tout emporter, le responsable décoche les commandes
@@ -38,6 +44,11 @@ export function SaisieCodeModal({ exp, open, onClose }: Props) {
   const toast = useToast();
   const qc = useQueryClient();
   const [pin, setPin] = useState("");
+  const sansVehicule = !exp.plaque;
+  const [preuve, setPreuve] = useState<Preuve>(sansVehicule ? "pieton" : "plaque");
+  const [photoPlaque, setPhotoPlaque] = useState<string | null>(null);
+  const [plaqueDiff, setPlaqueDiff] = useState(false);
+  const [commentaire, setCommentaire] = useState("");
 
   const commandes = useMemo(() => splitNumCmdNav(exp.numCmdNav || ""), [exp.numCmdNav]);
   const isMultiple = commandes.length > 1;
@@ -61,7 +72,11 @@ export function SaisieCodeModal({ exp, open, onClose }: Props) {
       return api.jalons.saisieCode(exp.id, {
         acteurEmail: user.email,
         acteurNom: user.nom,
-        codeRetraitSaisi: pin.trim(),
+        preuve,
+        photoPlaqueMagasin: preuve === "plaque" ? (photoPlaque ?? undefined) : undefined,
+        plaqueConforme: preuve === "plaque" ? !plaqueDiff : undefined,
+        commentaire: plaqueDiff ? commentaire.trim() : undefined,
+        codeRetraitSaisi: preuve === "code" ? pin.trim() : undefined,
         // On ne transmet la sélection que si elle a du sens (plusieurs
         // commandes ET pas toutes sélectionnées) — sinon comportement normal.
         commandesChargees: isMultiple ? Array.from(selected) : undefined,
@@ -74,20 +89,40 @@ export function SaisieCodeModal({ exp, open, onClose }: Props) {
             `nouveau code : ${res.reliquat.codeRetrait}`,
         );
       } else {
-        toast.success("Code validé — le chargement est enclenché");
+        toast.success(
+          res.plaqueConforme === false
+            ? "Chargement enclenché — plaque différente signalée"
+            : "Arrivée confirmée — le chargement est enclenché",
+        );
       }
       qc.invalidateQueries({ queryKey: ["expeditions"] });
-      setPin("");
-      setSelected(new Set(commandes));
+      resetForm();
       onClose();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erreur inconnue"),
   });
 
+  function resetForm() {
+    setPin("");
+    setPhotoPlaque(null);
+    setPlaqueDiff(false);
+    setCommentaire("");
+    setSelected(new Set(commandes));
+  }
+
+  const preuveOk =
+    preuve === "pieton" ||
+    (preuve === "plaque" && !!photoPlaque && (!plaqueDiff || commentaire.trim().length >= 3)) ||
+    (preuve === "code" && pin.trim().length === 4);
+
   function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (pin.trim().length !== 4) {
-      toast.error("Le code PIN doit faire 4 chiffres.");
+    if (!preuveOk) {
+      toast.error(
+        preuve === "plaque"
+          ? "Prends la photo de la plaque (et précise la différence si elle ne correspond pas)."
+          : "Le code PIN doit faire 4 chiffres.",
+      );
       return;
     }
     if (isMultiple && selected.size === 0) {
@@ -98,8 +133,7 @@ export function SaisieCodeModal({ exp, open, onClose }: Props) {
   }
 
   function handleClose() {
-    setPin("");
-    setSelected(new Set(commandes));
+    resetForm();
     onClose();
   }
 
@@ -107,8 +141,8 @@ export function SaisieCodeModal({ exp, open, onClose }: Props) {
     <Modal
       open={open}
       onClose={handleClose}
-      title="Saisie du code de livraison"
-      description="Le client te remet le code reçu du commercial."
+      title="Client arrivé au magasin"
+      description="Confirme que le client est bien là : le chargement démarre."
       size={isMultiple ? "lg" : "md"}
       footer={
         <>
@@ -119,13 +153,13 @@ export function SaisieCodeModal({ exp, open, onClose }: Props) {
             type="submit"
             form="form-saisie-code"
             className="btn-primary gap-2"
-            disabled={m.isPending || pin.length !== 4 || (isMultiple && selected.size === 0)}
+            disabled={m.isPending || !preuveOk || (isMultiple && selected.size === 0)}
           >
-            <KeyRound className="h-4 w-4" />
+            <Check className="h-4 w-4" />
             {m.isPending
               ? "Validation…"
               : toutSelectionne
-                ? "Valider et enclencher"
+                ? "Confirmer et enclencher"
                 : `Valider (${selected.size}/${commandes.length}) et créer le reliquat`}
           </button>
         </>
@@ -186,31 +220,105 @@ export function SaisieCodeModal({ exp, open, onClose }: Props) {
           </div>
         )}
 
+        {/* Preuve d'arrivée */}
         <div>
-          <label htmlFor="pin-saisie" className="label">
-            Code à 4 chiffres <span className="text-red-500">*</span>
-          </label>
-          <div className="relative">
-            <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <input
-              id="pin-saisie"
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              maxLength={4}
-              value={pin}
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
-              autoFocus
-              autoComplete="off"
-              placeholder="1234"
-              className="input pl-9 text-center text-2xl tracking-[0.8em] font-mono font-bold"
-            />
+          <div className="mb-1.5 text-sm font-medium text-slate-700">Preuve d'arrivée</div>
+          <div className="grid grid-cols-3 gap-1 rounded-ctl bg-slate-100 p-1 text-sm">
+            {([
+              ["plaque", "Plaque", Camera, sansVehicule],
+              ["pieton", "Client à pied", Footprints, !sansVehicule],
+              ["code", "Code", KeyRound, false],
+            ] as const).map(([k, label, Icon, off]) => (
+              <button
+                key={k}
+                type="button"
+                disabled={off}
+                onClick={() => setPreuve(k)}
+                className={cn(
+                  "flex items-center justify-center gap-1.5 rounded-md px-2 py-2 font-medium transition-colors disabled:opacity-40",
+                  preuve === k ? "bg-white text-brand-900 shadow-sm" : "text-slate-600 hover:text-slate-900",
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </button>
+            ))}
           </div>
-          <p className="text-xs text-slate-500 mt-1.5">
-            Si le code n'est pas reconnu, le client doit retourner voir le commercial qui a créé la
-            commande pour le revérifier.
-          </p>
         </div>
+
+        {preuve === "plaque" && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-line bg-slate-50 px-3.5 py-2.5 text-sm">
+              <span className="text-slate-500">Plaque notée au poste de garde</span>
+              <span className="num text-base font-semibold text-slate-900">{exp.plaque}</span>
+            </div>
+            <PhotoCapture
+              label="Photo de la plaque du véhicule"
+              hint="La plaque doit être lisible. L'heure est enregistrée par le serveur."
+              value={photoPlaque}
+              onChange={setPhotoPlaque}
+              maxDimension={1280}
+              quality={0.8}
+              required
+            />
+            <label className="flex cursor-pointer items-center gap-2.5 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={plaqueDiff}
+                onChange={(e) => setPlaqueDiff(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-brand-900 focus:ring-brand-400"
+              />
+              La plaque ne correspond pas à celle du poste de garde
+            </label>
+            {plaqueDiff && (
+              <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
+                <div className="flex items-start gap-2 text-sm text-amber-900">
+                  <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>Tu peux continuer, mais l'écart sera signalé dans Chat et dans l'historique.</span>
+                </div>
+                <input
+                  className="input"
+                  value={commentaire}
+                  onChange={(e) => setCommentaire(e.target.value)}
+                  placeholder="Que s'est-il passé ? (autre véhicule, plaque mal saisie…)"
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {preuve === "pieton" && (
+          <p className="rounded-lg border border-line bg-slate-50 px-3.5 py-3 text-sm text-slate-600">
+            Client venu sans véhicule : aucune plaque n'a été enregistrée à l'entrée, aucune photo n'est
+            demandée. L'heure de son entrée vaut heure d'arrivée.
+          </p>
+        )}
+
+        {preuve === "code" && (
+          <div>
+            <label htmlFor="pin-saisie" className="label">
+              Code à 4 chiffres <span className="text-red-500">*</span>
+            </label>
+            <div className="relative">
+              <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <input
+                id="pin-saisie"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={4}
+                value={pin}
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+                autoComplete="off"
+                placeholder="1234"
+                className="input pl-9 text-center text-2xl tracking-[0.8em] font-mono font-bold"
+              />
+            </div>
+            <p className="text-xs text-slate-500 mt-1.5">
+              Ancienne méthode, conservée pendant la transition. Préfère la photo de la plaque.
+            </p>
+          </div>
+        )}
       </form>
     </Modal>
   );

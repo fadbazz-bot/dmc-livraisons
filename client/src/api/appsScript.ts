@@ -211,11 +211,21 @@ export const jalons = {
    */
   saisieCode: (
     expId: string,
-    ctx: ActeurContext & { codeRetraitSaisi: string; commandesChargees?: string[] },
+    ctx: ActeurContext & {
+      /** plaque = photo de la plaque au magasin ; pieton = client sans véhicule ; code = ancien code PIN (transition) */
+      preuve: "plaque" | "pieton" | "code";
+      photoPlaqueMagasin?: string;
+      plaqueConforme?: boolean;
+      commentaire?: string;
+      codeRetraitSaisi?: string;
+      commandesChargees?: string[];
+    },
   ) =>
     apiPost<{
       ok: true;
       tSaisieCode: string;
+      preuve: string;
+      plaqueConforme: boolean;
       reliquat: { id: string; numCmdNav: string; codeRetrait: string; zone: string } | null;
     }>("jalon_saisie_code", { expId, ...ctx }),
 

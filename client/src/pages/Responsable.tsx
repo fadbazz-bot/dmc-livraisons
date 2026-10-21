@@ -37,7 +37,7 @@ function zoneToSite(zone: string): "Dakar" | "Diamniadio" {
 
 /**
  * Page Responsable Magasin — flux v3.
- * Action UNIQUE : saisir le code PIN remis par le client → chargement enclenché.
+ * Action UNIQUE : confirmer l'arrivée du client (photo plaque / à pied) → chargement enclenché.
  *
  * Filtrage : les expéditions affichées sont celles avec un statut "entree_site"
  * (camion sur site, en attente du code), filtrées par catégorie de magasin
@@ -118,7 +118,7 @@ export default function ResponsablePage() {
             )}
           >
             <KeyRound className="h-4 w-4" />
-            Code à saisir
+            Arrivées
             {aTraiter.length > 0 && (
               <span className="rounded-full bg-brand-900 px-1.5 py-0.5 text-[10px] font-bold text-white">{aTraiter.length}</span>
             )}
@@ -145,8 +145,8 @@ export default function ResponsablePage() {
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         {section === "code" ? (
           <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 mb-4 text-sm text-blue-900">
-            Saisis le code PIN que le client t'a remis pour <strong>enclencher le chargement</strong>.
-            Le chargement s'arrêtera automatiquement à la sortie du site.
+            Quand le véhicule du client arrive chez toi, <strong>photographie sa plaque</strong> (ou indique
+            « client à pied ») pour <strong>enclencher le chargement</strong>. Plus besoin de code.
           </div>
         ) : (
           <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 mb-4 text-sm text-amber-900">
@@ -166,7 +166,7 @@ export default function ResponsablePage() {
         ) : section === "code" ? (
           aTraiter.length === 0 ? (
             <div className="card p-10 text-center">
-              <p className="text-slate-500">Aucun camion en attente de saisie de code.</p>
+              <p className="text-slate-500">Aucun client en route vers ton magasin.</p>
               {myZone && <p className="text-xs text-slate-400 mt-1">Filtre actif : zone « {myZone} ».</p>}
             </div>
           ) : (
@@ -236,8 +236,8 @@ function ResponsableCard({
       <div className="flex items-center justify-between gap-3">
         <JalonTimeline exp={exp} compact />
         <button onClick={onAction} className="btn-primary shrink-0 gap-2">
-          <KeyRound className="h-4 w-4" />
-          Saisir code
+          <Camera className="h-4 w-4" />
+          Client arrivé
         </button>
       </div>
     </div>

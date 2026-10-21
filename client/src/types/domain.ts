@@ -354,13 +354,13 @@ export interface JalonStep {
  * Flux v3 simplifié — 4 jalons au total.
  *   T0           : Commercial crée la commande
  *   ENTREE_SITE  : Chef de poste valide entrée + plaque/chauffeur/photos
- *   SAISIE_CODE  : Responsable magasin saisit le code PIN → chargement enclenché
+ *   SAISIE_CODE  : Responsable magasin confirme l'arrivée du client (photo plaque / à pied) → chargement enclenché
  *                  (stocké physiquement dans la colonne T_CHARGEMENT_FINI)
  *   SORTIE_SITE  : Chef de poste valide la sortie + photos véhicule chargé
  */
 export const JALONS: JalonStep[] = [
   { key: "T0",           label: "Instruction",   acteur: "commercial",  field: "t0" },
   { key: "ENTREE_SITE",  label: "Entrée site",   acteur: "chef_poste",  field: "tEntreeSite" },
-  { key: "SAISIE_CODE",  label: "Code saisi",    acteur: "responsable", field: "tChargementFini" },
+  { key: "SAISIE_CODE",  label: "Au magasin",    acteur: "responsable", field: "tChargementFini" },
   { key: "SORTIE_SITE",  label: "Sortie",        acteur: "chef_poste",  field: "tSortieSite" },
 ];
