@@ -109,6 +109,7 @@ export interface Expedition {
 
   // Module flotte interne
   modeLivraison?: ModeLivraison;
+  urgent?: boolean;
   dateLivraisonPrevue?: string | null;
   chauffeurFlotteId?: string | null;
   confirmeNav?: boolean;
@@ -187,6 +188,8 @@ export interface LivraisonFlotte {
   heureSortieSite: string;
 
   modeLivraison: ModeLivraison;
+  /** Livraison jour même en urgence (demandée par le commercial) */
+  urgent?: boolean;
   dateLivraisonPrevue: string | null;
   dateLivraisonReelle: string | null;
   conformite: ConformiteLivraison;
@@ -279,6 +282,8 @@ export interface CreateCommandeInput {
   expeditions: ExpeditionInput[];
   /** "interne" (flotte DMC) ou "externe" (transporteur/client). Défaut : externe. */
   modeLivraison?: ModeLivraison;
+  /** Flotte interne uniquement : livraison le jour même en urgence */
+  urgent?: boolean;
 }
 
 export interface CreateCommandeResult {
@@ -294,6 +299,7 @@ export interface CreateCommandeResult {
     codeRetrait: string;
     modeLivraison?: ModeLivraison;
     dateLivraisonPrevue?: string | null;
+    urgent?: boolean;
   }>;
 }
 

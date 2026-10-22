@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Truck, LogOut, RefreshCw, Users, ChevronDown, ChevronRight, Search, Camera, AlertTriangle } from "lucide-react";
+import { Truck, LogOut, RefreshCw, Users, ChevronDown, ChevronRight, Camera, AlertTriangle } from "lucide-react";
 import { api } from "@/api/appsScript";
 import { useAuth } from "@/lib/auth";
 import { cacheSet, persistedCache } from "@/lib/persistentCache";
@@ -11,15 +11,21 @@ import { EntreeSiteModal } from "@/components/modals/EntreeSiteModal";
 import { SortieSiteModal } from "@/components/modals/SortieSiteModal";
 import { formatRelative } from "@/lib/format";
 import { cn } from "@/lib/cn";
-import { correspond } from "@/lib/similarite";
+import { UrgentBadge } from "@/components/UrgentBadge";
 import { siteDeZone } from "@/lib/portee";
 import { ConfirmerClientModal } from "@/components/modals/ConfirmerClientModal";
+import { BarreOutilsTerrain, pastillesStandard } from "@/components/BarreOutilsTerrain";
+import { appliquer, compter, minutesDepuis, FILTRES_VIDES, type FiltresTerrain } from "@/lib/listeTerrain";
 
 type Section = "clients" | "entrer" | "sortir";
 
 export default function PosteGardePage() {
   const { user } = useAuth();
   const [section, setSection] = useState<Section>("clients");
+  // Un jeu de filtres par onglet : changer d'onglet ne garde pas la recherche d'un autre usage
+  const [fClients, setFClients] = useState<FiltresTerrain>({ ...FILTRES_VIDES });
+  const [fEntrer, setFEntrer] = useState<FiltresTerrain>({ ...FILTRES_VIDES });
+  const [fSortir, setFSortir] = useState<FiltresTerrain>({ ...FILTRES_VIDES, tri: "ancien" });
   const [entreeExp, setEntreeExp] = useState<Expedition | null>(null);
   const [aConfirmer, setAConfirmer] = useState<Expedition | null>(null);
   const [sortieExp, setSortieExp] = useState<Expedition | null>(null);
@@ -49,6 +55,27 @@ export default function PosteGardePage() {
     );
     return { aEntrer, aSortir };
   }, [exps, mySite]);
+
+  const afficherSite = !mySite;
+  const magasinsGarde = ["parc", "depot", "sav"];
+  const clientsFiltres = useMemo(
+    () => appliquer(aEntrer, fClients).filter((e) => fClients.extra !== "anciens" || minutesDepuis(e.t0) > 60),
+    [aEntrer, fClients],
+  );
+  const entrerFiltres = useMemo(
+    () => appliquer(aEntrer, fEntrer).filter((e) => fEntrer.extra !== "anciens" || minutesDepuis(e.t0) > 60),
+    [aEntrer, fEntrer],
+  );
+  const sortirFiltres = useMemo(
+    () =>
+      appliquer(aSortir, fSortir, "chargement").filter((e) => {
+        const n = e.nbPhotosChargement ?? 0;
+        if (fSortir.extra === "photos_manquantes") return n < 3;
+        if (fSortir.extra === "pret") return n >= 3;
+        return true;
+      }),
+    [aSortir, fSortir],
+  );
 
   return (
     <div className="h-full flex flex-col">
@@ -115,21 +142,68 @@ export default function PosteGardePage() {
             </p>
           </div>
         ) : section === "clients" ? (
-          <ClientsView exps={aEntrer} onPick={(e) => setAConfirmer(e)} />
+          <div className="space-y-3">
+            <BarreOutilsTerrain
+              f={fClients}
+              onChange={setFClients}
+              placeholder="Tape le nom du client…"
+              tris={["client", "ancien", "recent", "magasin"]}
+              groupes={pastillesStandard({
+                f: fClients, onChange: setFClients, comptes: compter(aEntrer), afficherSite, magasins: magasinsGarde,
+                extra: { options: [{ value: "", label: "Toutes" }, { value: "anciens", label: "Attendent > 1 h", n: aEntrer.filter((e) => minutesDepuis(e.t0) > 60).length }] },
+              })}
+              resultats={clientsFiltres.length}
+              total={aEntrer.length}
+            />
+            <ClientsView exps={clientsFiltres} triClient={fClients.tri === "client"} recherche={fClients.q} onPick={(e) => setAConfirmer(e)} />
+          </div>
         ) : section === "entrer" ? (
-          <ExpList
-            list={aEntrer}
-            actionLabel="Entrée site"
-            onAction={(e) => setAConfirmer(e)}
-            empty="Aucun camion en attente d'entrée."
-          />
+          <div className="space-y-3">
+            <BarreOutilsTerrain
+              f={fEntrer}
+              onChange={setFEntrer}
+              placeholder="Client, n° commande, magasin…"
+              groupes={pastillesStandard({
+                f: fEntrer, onChange: setFEntrer, comptes: compter(aEntrer), afficherSite, magasins: magasinsGarde,
+                extra: { options: [{ value: "", label: "Toutes" }, { value: "anciens", label: "Attendent > 1 h", n: aEntrer.filter((e) => minutesDepuis(e.t0) > 60).length }] },
+              })}
+              resultats={entrerFiltres.length}
+              total={aEntrer.length}
+            />
+            <ExpList
+              list={entrerFiltres}
+              actionLabel="Entrée site"
+              onAction={(e) => setAConfirmer(e)}
+              empty={aEntrer.length ? "Aucun camion ne correspond à ces filtres." : "Aucun camion en attente d'entrée."}
+            />
+          </div>
         ) : (
-          <ExpList
-            list={aSortir}
-            actionLabel="Valider sortie"
-            onAction={(e) => setSortieExp(e)}
-            empty="Aucun camion prêt à sortir."
-          />
+          <div className="space-y-3">
+            <BarreOutilsTerrain
+              f={fSortir}
+              onChange={setFSortir}
+              placeholder="Client, plaque, chauffeur, n° commande…"
+              tris={["ancien", "recent", "client", "plaque", "magasin"]}
+              groupes={pastillesStandard({
+                f: fSortir, onChange: setFSortir, comptes: compter(aSortir), afficherSite, magasins: magasinsGarde,
+                extra: {
+                  options: [
+                    { value: "", label: "Tous" },
+                    { value: "pret", label: "Photos OK", n: aSortir.filter((e) => (e.nbPhotosChargement ?? 0) >= 3).length },
+                    { value: "photos_manquantes", label: "Photos manquantes", n: aSortir.filter((e) => (e.nbPhotosChargement ?? 0) < 3).length },
+                  ],
+                },
+              })}
+              resultats={sortirFiltres.length}
+              total={aSortir.length}
+            />
+            <ExpList
+              list={sortirFiltres}
+              actionLabel="Valider sortie"
+              onAction={(e) => setSortieExp(e)}
+              empty={aSortir.length ? "Aucun camion ne correspond à ces filtres." : "Aucun camion prêt à sortir."}
+            />
+          </div>
         )}
       </div>
 
@@ -196,8 +270,7 @@ interface ClientGroup {
   expeditions: Expedition[];
 }
 
-function ClientsView({ exps, onPick }: { exps: Expedition[]; onPick: (e: Expedition) => void }) {
-  const [search, setSearch] = useState("");
+function ClientsView({ exps, onPick, recherche: search, triClient }: { exps: Expedition[]; onPick: (e: Expedition) => void; recherche: string; triClient: boolean }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   // Grouper par nom de client
@@ -208,17 +281,12 @@ function ClientsView({ exps, onPick }: { exps: Expedition[]; onPick: (e: Expedit
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(e);
     }
-    return Array.from(map.entries())
-      .map(([nom, expeditions]) => ({ nom, expeditions }))
-      .sort((a, b) => a.nom.localeCompare(b.nom));
-  }, [exps]);
+    // exps arrive déjà trié : on garde l'ordre d'apparition, sauf tri A → Z demandé
+    const liste = Array.from(map.entries()).map(([nom, expeditions]) => ({ nom, expeditions }));
+    return triClient ? liste.sort((a, b) => a.nom.localeCompare(b.nom, "fr")) : liste;
+  }, [exps, triClient]);
 
-  // Filtrer par recherche
-  const filtered = useMemo(() => {
-    const term = search.trim();
-    if (!term) return groups;
-    return groups.filter((g) => correspond(g.nom, term));
-  }, [groups, search]);
+  const filtered = groups;
 
   function toggle(nom: string) {
     setExpanded((prev) => {
@@ -234,19 +302,6 @@ function ClientsView({ exps, onPick }: { exps: Expedition[]; onPick: (e: Expedit
       <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-900">
         Demande au chauffeur <strong>pour quel client</strong> il vient. Cherche le nom ci-dessous,
         clique sur le client pour voir ses livraisons en attente, et autorise l'entrée pour la bonne.
-      </div>
-
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Tape le nom du client…"
-          className="input pl-9"
-          autoFocus
-        />
       </div>
 
       {filtered.length === 0 ? (
@@ -394,6 +449,7 @@ function ExpActionCard({
             <span className="font-medium text-slate-800 truncate">
               {exp.nomClient || "Client inconnu"}
             </span>
+            {exp.urgent && <UrgentBadge />}
           </div>
           <div className="mt-1 text-xs text-slate-500 flex items-center gap-3 flex-wrap">
             <span>{exp.zone}</span>

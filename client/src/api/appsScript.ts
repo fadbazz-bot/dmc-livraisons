@@ -541,6 +541,8 @@ export const flotteLivraisons = {
     etat?: EtatLivraison;
     site?: string;
     magasin?: string;
+    /** true : toutes les livraisons pas encore soldées, quelle que soit la date d'inscription */
+    enAttente?: boolean;
   } = {}) => apiGet<LivraisonFlotte[]>("getLivraisonsFlotte", filters as Record<string, ParamValue>),
 
   updateSuivi: (input: {
@@ -560,8 +562,12 @@ export const flotteLivraisons = {
    * chauffeurId : affecte (""  = retire → A ATTRIBUER ; remet la validation à non validée).
    * valider     : valide / déverrouille l'attribution.
    */
-  assignChauffeur: (input: { expId: string; chauffeurId?: string; valider?: boolean }) =>
+  assignChauffeur: (input: { expId: string; chauffeurId?: string; plaque?: string; valider?: boolean }) =>
     apiPost<{ ok: true; chauffeurNom: string; plaque: string }>("assignChauffeurLivraison", input),
+
+  /** Change la date prévue (planning glisser-déposer). Remet l'attribution à « non validée ». */
+  replanifier: (input: { expId: string; date: string; acteurEmail?: string; acteurNom?: string }) =>
+    apiPost<{ ok: true; inchange?: boolean }>("replanifierLivraison", input),
 
   kpi: (filters: { dateDebut: string; dateFin: string; site?: string; magasin?: string }) =>
     apiGet<KpiFlotte>("getKpiFlotte", filters),

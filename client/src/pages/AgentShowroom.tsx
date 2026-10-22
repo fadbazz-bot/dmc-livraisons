@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DoorOpen, LogOut, RefreshCw, ShieldCheck } from "lucide-react";
 import { api } from "@/api/appsScript";
@@ -11,7 +11,10 @@ import { EntreeShowroomModal } from "@/components/modals/EntreeShowroomModal";
 import { SortieShowroomModal } from "@/components/modals/SortieShowroomModal";
 import { formatRelative } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { UrgentBadge } from "@/components/UrgentBadge";
 import { ConfirmerClientModal } from "@/components/modals/ConfirmerClientModal";
+import { BarreOutilsTerrain, pastillesStandard } from "@/components/BarreOutilsTerrain";
+import { appliquer, compter, minutesDepuis, FILTRES_VIDES, type FiltresTerrain } from "@/lib/listeTerrain";
 
 type Section = "entrer" | "sortir";
 
@@ -35,6 +38,8 @@ function zoneToSite(zone: string): "Dakar" | "Diamniadio" {
 export default function AgentShowroomPage() {
   const { user } = useAuth();
   const [section, setSection] = useState<Section>("entrer");
+  const [fEntrer, setFEntrer] = useState<FiltresTerrain>({ ...FILTRES_VIDES });
+  const [fSortir, setFSortir] = useState<FiltresTerrain>({ ...FILTRES_VIDES });
   const [entreeExp, setEntreeExp] = useState<Expedition | null>(null);
   const [aConfirmer, setAConfirmer] = useState<Expedition | null>(null);
   const [sortieExp, setSortieExp] = useState<Expedition | null>(null);
@@ -55,6 +60,17 @@ export default function AgentShowroomPage() {
   );
   const aEntrer = mine.filter((e) => e.statut === "en_attente");
   const aSortir = mine.filter((e) => e.statut === "en_chargement" || e.statut === "pret_sortie");
+  const afficherSite = !user?.site;
+  const entrerFiltres = useMemo(
+    () => appliquer(aEntrer, fEntrer).filter((e) => fEntrer.extra !== "attente" || minutesDepuis(e.t0) > 30),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [exps, fEntrer, user?.site],
+  );
+  const sortirFiltres = useMemo(
+    () => appliquer(aSortir, fSortir, "entree").filter((e) => fSortir.extra !== "attente" || minutesDepuis(e.tEntreeSite) > 30),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [exps, fSortir, user?.site],
+  );
 
   return (
     <div className="h-full flex flex-col">
@@ -113,21 +129,49 @@ export default function AgentShowroomPage() {
             </p>
           </div>
         ) : section === "entrer" ? (
-          <ExpList
-            list={aEntrer}
-            actionLabel="Autoriser"
-            actionIcon={<DoorOpen className="h-4 w-4" />}
-            onAction={(e) => setAConfirmer(e)}
-            empty="Aucun client en attente d'entrée."
-          />
+          <div className="space-y-3">
+            <BarreOutilsTerrain
+              f={fEntrer}
+              onChange={setFEntrer}
+              placeholder="Tape le nom du client, le n° de commande…"
+              tris={["client", "ancien", "recent"]}
+              groupes={pastillesStandard({
+                f: fEntrer, onChange: setFEntrer, comptes: compter(aEntrer), afficherSite,
+                extra: { options: [{ value: "", label: "Tous" }, { value: "attente", label: "Préparés depuis > 30 min", n: aEntrer.filter((e) => minutesDepuis(e.t0) > 30).length }] },
+              })}
+              resultats={entrerFiltres.length}
+              total={aEntrer.length}
+            />
+            <ExpList
+              list={entrerFiltres}
+              actionLabel="Autoriser"
+              actionIcon={<DoorOpen className="h-4 w-4" />}
+              onAction={(e) => setAConfirmer(e)}
+              empty={aEntrer.length ? "Aucun client ne correspond à ces filtres." : "Aucun client en attente d'entrée."}
+            />
+          </div>
         ) : (
-          <ExpList
-            list={aSortir}
-            actionLabel="Valider sortie"
-            actionIcon={<LogOut className="h-4 w-4" />}
-            onAction={(e) => setSortieExp(e)}
-            empty="Aucun client prêt à sortir."
-          />
+          <div className="space-y-3">
+            <BarreOutilsTerrain
+              f={fSortir}
+              onChange={setFSortir}
+              placeholder="Client, plaque, n° commande…"
+              tris={["ancien", "recent", "client", "plaque"]}
+              groupes={pastillesStandard({
+                f: fSortir, onChange: setFSortir, comptes: compter(aSortir), afficherSite,
+                extra: { options: [{ value: "", label: "Tous" }, { value: "attente", label: "Sur place > 30 min", n: aSortir.filter((e) => minutesDepuis(e.tEntreeSite) > 30).length }] },
+              })}
+              resultats={sortirFiltres.length}
+              total={aSortir.length}
+            />
+            <ExpList
+              list={sortirFiltres}
+              actionLabel="Valider sortie"
+              actionIcon={<LogOut className="h-4 w-4" />}
+              onAction={(e) => setSortieExp(e)}
+              empty={aSortir.length ? "Aucun client ne correspond à ces filtres." : "Aucun client prêt à sortir."}
+            />
+          </div>
         )}
       </div>
 
@@ -246,6 +290,7 @@ function ExpActionCard({
             <span className="font-medium text-slate-800 truncate">
               {exp.nomClient || "Client inconnu"}
             </span>
+            {exp.urgent && <UrgentBadge />}
           </div>
           <div className="mt-1 text-xs text-slate-500 flex items-center gap-3 flex-wrap">
             <span>{exp.zone}</span>

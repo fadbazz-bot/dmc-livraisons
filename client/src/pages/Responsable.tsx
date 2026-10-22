@@ -11,6 +11,9 @@ import { SaisieCodeModal } from "@/components/modals/SaisieCodeModal";
 import { PhotosChargementModal } from "@/components/modals/PhotosChargementModal";
 import { formatRelative } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { UrgentBadge } from "@/components/UrgentBadge";
+import { BarreOutilsTerrain, pastillesStandard } from "@/components/BarreOutilsTerrain";
+import { appliquer, compter, minutesDepuis, FILTRES_VIDES, type FiltresTerrain } from "@/lib/listeTerrain";
 
 /**
  * Catégorise une zone (libellé complet type "Parc Diamniadio" ou catégorie
@@ -52,6 +55,8 @@ export default function ResponsablePage() {
   const [activeExp, setActiveExp] = useState<Expedition | null>(null);
   const [photoExp, setPhotoExp] = useState<Expedition | null>(null);
   const [section, setSection] = useState<"code" | "chargement">("code");
+  const [fCode, setFCode] = useState<FiltresTerrain>({ ...FILTRES_VIDES });
+  const [fCharg, setFCharg] = useState<FiltresTerrain>({ ...FILTRES_VIDES });
 
   const { data: exps = [], isLoading, refetch, isFetching, error } = useQuery({
     queryKey: ["expeditions"],
@@ -84,6 +89,24 @@ export default function ResponsablePage() {
     [exps, myCategorie, user?.site],
   );
   const photosManquantes = enChargement.filter((e) => (e.nbPhotosChargement ?? 0) < PHOTOS_MIN).length;
+
+  // Filtres : le site et le magasin ne sont proposés que si le compte n'y est pas déjà limité
+  const afficherSite = !user?.site;
+  const magasinsPropose = myCategorie ? [] : ["parc", "depot", "showroom", "sav"];
+  const codeFiltres = useMemo(
+    () => appliquer(aTraiter, fCode, "entree").filter((e) => fCode.extra !== "attente" || minutesDepuis(e.tEntreeSite) > 30),
+    [aTraiter, fCode],
+  );
+  const chargFiltres = useMemo(
+    () =>
+      appliquer(enChargement, fCharg, "chargement").filter((e) => {
+        const n = e.nbPhotosChargement ?? 0;
+        if (fCharg.extra === "photos_manquantes") return n < PHOTOS_MIN;
+        if (fCharg.extra === "pret") return n >= PHOTOS_MIN;
+        return true;
+      }),
+    [enChargement, fCharg],
+  );
 
   return (
     <div className="h-full flex flex-col">
@@ -164,27 +187,67 @@ export default function ResponsablePage() {
             </p>
           </div>
         ) : section === "code" ? (
-          aTraiter.length === 0 ? (
-            <div className="card p-10 text-center">
-              <p className="text-slate-500">Aucun client en route vers ton magasin.</p>
-              {myZone && <p className="text-xs text-slate-400 mt-1">Filtre actif : zone « {myZone} ».</p>}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {aTraiter.map((exp) => (
-                <ResponsableCard key={exp.id} exp={exp} onAction={() => setActiveExp(exp)} />
-              ))}
-            </div>
-          )
-        ) : enChargement.length === 0 ? (
-          <div className="card p-10 text-center">
-            <p className="text-slate-500">Aucun chargement en cours.</p>
+          <div className="space-y-3">
+            <BarreOutilsTerrain
+              f={fCode}
+              onChange={setFCode}
+              placeholder="Client, plaque, chauffeur, n° commande…"
+              tris={["ancien", "recent", "client", "plaque", "magasin"]}
+              groupes={pastillesStandard({
+                f: fCode, onChange: setFCode, comptes: compter(aTraiter), afficherSite, magasins: magasinsPropose,
+                extra: { options: [{ value: "", label: "Toutes" }, { value: "attente", label: "Sur site > 30 min", n: aTraiter.filter((e) => minutesDepuis(e.tEntreeSite) > 30).length }] },
+              })}
+              resultats={codeFiltres.length}
+              total={aTraiter.length}
+            />
+            {codeFiltres.length === 0 ? (
+              <div className="card p-10 text-center">
+                <p className="text-slate-500">
+                  {aTraiter.length ? "Aucun client ne correspond à ces filtres." : "Aucun client en route vers ton magasin."}
+                </p>
+                {!aTraiter.length && myZone && <p className="text-xs text-slate-400 mt-1">Filtre actif : zone « {myZone} ».</p>}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {codeFiltres.map((exp) => (
+                  <ResponsableCard key={exp.id} exp={exp} onAction={() => setActiveExp(exp)} />
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-3">
-            {enChargement.map((exp) => (
-              <ChargementCard key={exp.id} exp={exp} onAction={() => setPhotoExp(exp)} />
-            ))}
+            <BarreOutilsTerrain
+              f={fCharg}
+              onChange={setFCharg}
+              placeholder="Client, plaque, chauffeur, n° commande…"
+              tris={["ancien", "recent", "client", "plaque", "magasin"]}
+              groupes={pastillesStandard({
+                f: fCharg, onChange: setFCharg, comptes: compter(enChargement), afficherSite, magasins: magasinsPropose,
+                extra: {
+                  options: [
+                    { value: "", label: "Tous" },
+                    { value: "photos_manquantes", label: "Photos manquantes", n: photosManquantes },
+                    { value: "pret", label: "Photos OK", n: enChargement.length - photosManquantes },
+                  ],
+                },
+              })}
+              resultats={chargFiltres.length}
+              total={enChargement.length}
+            />
+            {chargFiltres.length === 0 ? (
+              <div className="card p-10 text-center">
+                <p className="text-slate-500">
+                  {enChargement.length ? "Aucun chargement ne correspond à ces filtres." : "Aucun chargement en cours."}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {chargFiltres.map((exp) => (
+                  <ChargementCard key={exp.id} exp={exp} onAction={() => setPhotoExp(exp)} />
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -218,6 +281,7 @@ function ResponsableCard({
             <span className="font-medium text-slate-800 truncate">
               {exp.nomClient || "Client inconnu"}
             </span>
+            {exp.urgent && <UrgentBadge />}
             {exp.expParentId && (
               <span className="text-xs font-medium bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">
                 Reliquat
@@ -255,6 +319,7 @@ function ChargementCard({ exp, onAction }: { exp: Expedition; onAction: () => vo
             <span className="font-mono text-sm font-semibold text-slate-900">{exp.numCmdNav || "—"}</span>
             <span className="text-slate-300">·</span>
             <span className="font-medium text-slate-800 truncate">{exp.nomClient || "Client inconnu"}</span>
+            {exp.urgent && <UrgentBadge />}
             {exp.expParentId && (
               <span className="text-xs font-medium bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">Reliquat</span>
             )}

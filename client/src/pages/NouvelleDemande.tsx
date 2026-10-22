@@ -12,6 +12,7 @@ import {
   Truck,
   Globe,
   CalendarClock,
+  Siren,
   XCircle,
   Database,
   History,
@@ -43,6 +44,7 @@ export default function NouvelleDemandePage() {
   const qc = useQueryClient();
 
   const [modeLivraison, setModeLivraison] = useState<ModeLivraison>("externe");
+  const [urgent, setUrgent] = useState(false); // livraison interne le jour même
   const [numCmdNav, setNumCmdNav] = useState("");
   const [client, setClient] = useState("");
   const [clientHistory, setClientHistory] = useState<string[]>([]);
@@ -51,8 +53,8 @@ export default function NouvelleDemandePage() {
 
   // Date prévue calculée auto si mode interne (preview client-side)
   const datePrevue = useMemo(
-    () => (modeLivraison === "interne" ? calculerDatePrevueLocale() : null),
-    [modeLivraison],
+    () => (modeLivraison === "interne" ? (urgent ? new Date().toISOString().slice(0, 10) : calculerDatePrevueLocale()) : null),
+    [modeLivraison, urgent],
   );
 
   // Vérification que le client est dans la whitelist livraison interne
@@ -112,6 +114,7 @@ export default function NouvelleDemandePage() {
       setNumCmdNav("");
       setClient("");
       setSelectedMagIds(new Set());
+      setUrgent(false); // l'urgence ne se reporte jamais sur la commande suivante
       // On garde modeLivraison tel quel — souvent l'utilisateur enchaîne plusieurs commandes du même type
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erreur inconnue"),
@@ -167,6 +170,7 @@ export default function NouvelleDemandePage() {
       commercialEmail: user.email,
       commercialNom: user.nom,
       modeLivraison,
+      urgent: modeLivraison === "interne" && urgent ? true : undefined,
       expeditions: selectedMagasins.map((mag) => ({
         zone: mag.label,
         magasinId: mag.id,
@@ -214,7 +218,7 @@ export default function NouvelleDemandePage() {
               <ModeCard
                 value="externe"
                 selected={modeLivraison === "externe"}
-                onSelect={() => setModeLivraison("externe")}
+                onSelect={() => { setModeLivraison("externe"); setUrgent(false); }}
                 icon={<Globe className="h-5 w-5" />}
                 title="Externe"
                 desc="Transporteur ou véhicule du client"
@@ -228,6 +232,31 @@ export default function NouvelleDemandePage() {
                 desc="Nos camions, nos chauffeurs"
               />
             </div>
+            {modeLivraison === "interne" && (
+              <button
+                type="button"
+                onClick={() => setUrgent((u) => !u)}
+                aria-pressed={urgent}
+                className={cn(
+                  "w-full flex items-center gap-3 rounded-lg border-2 px-3 py-2.5 text-left transition-all",
+                  urgent
+                    ? "border-red-500 bg-red-50 ring-2 ring-red-200"
+                    : "border-dashed border-slate-300 bg-white hover:border-red-300 hover:bg-red-50/40",
+                )}
+              >
+                <Siren className={cn("h-5 w-5 shrink-0", urgent ? "text-red-600" : "text-slate-400")} />
+                <span className="min-w-0">
+                  <span className={cn("block text-sm font-semibold", urgent ? "text-red-700" : "text-slate-800")}>
+                    {urgent ? "Livraison urgente : le jour même" : "Livraison urgente, le jour même ?"}
+                  </span>
+                  <span className="block text-xs text-slate-500">
+                    {urgent
+                      ? "Date prévue = aujourd'hui. Le responsable des chauffeurs est alerté sur le Chat."
+                      : "À n'utiliser que si le client doit être livré aujourd'hui (flotte DMC)."}
+                  </span>
+                </span>
+              </button>
+            )}
           </div>
 
           {/* Identité de la commande */}

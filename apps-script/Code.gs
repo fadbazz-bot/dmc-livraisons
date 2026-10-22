@@ -85,6 +85,7 @@ const COL_EXP = {
                           // on retombe sur le numCmdNav de la Commande parente.
   EXP_PARENT_ID:36,       // si cette expédition est un reliquat né d'un chargement
                           // partiel, pointe vers l'expédition d'origine. Vide sinon.
+  URGENT:37,              // TRUE = livraison interne jour même en urgence
 };
 
 // Colonnes UTILISATEURS
@@ -323,6 +324,7 @@ function handleRequest(e) {
       "getLivraisonsFlotte":    () => getLivraisonsFlotte(params),
       "updateSuiviLivraison":   () => updateSuiviLivraison(params),
       "assignChauffeurLivraison":() => assignChauffeurLivraison(params),
+      "replanifierLivraison":    () => replanifierLivraison(params),
       "getKpiFlotte":           () => getKpiFlotte(params),
       // Import NAV (validation livraison via export comptable)
       "importNavConfirmation":  () => importNavConfirmation(params),
@@ -927,8 +929,13 @@ function createCommande(params) {
   if (!site) throw new Error("Site obligatoire");
 
   const mode = (modeLivraison === "interne") ? "interne" : "externe";
-  // Date prévue auto pour les livraisons internes (selon règles métier DMC)
-  const datePrevue = mode === "interne" ? calculerDateLivraisonPrevue(null) : "";
+  // Urgence jour même : réservée à la flotte DMC (mode interne)
+  const urgent = mode === "interne" && (params.urgent === true || String(params.urgent) === "true");
+  // Date prévue auto pour les livraisons internes (selon règles métier DMC) ; urgence = aujourd'hui
+  const datePrevue = mode === "interne"
+    ? (urgent ? Utilities.formatDate(new Date(), "Africa/Dakar", "yyyy-MM-dd") : calculerDateLivraisonPrevue(null))
+    : "";
+  if (urgent) ensureEnteteExp_(COL_EXP.URGENT, "Urgent");
 
   const shCmd = getSheet("COMMANDES");
   const shExp = getSheet("EXPEDITIONS");
@@ -957,9 +964,10 @@ function createCommande(params) {
       "",              // ARCHIVED_AT
       numCmdNav || "", // NUM_CMD_NAV_LOCAL — copie initiale complète
       "",              // EXP_PARENT_ID — vide, ce n'est pas un reliquat
+      urgent ? true : "", // URGENT
     ]);
     addEvenement(expId, "T0", commercialEmail, params.commercialNom || commercialEmail, t0,
-      "Instruction de préparation — " + (mode === "interne" ? `livraison interne (prévue ${datePrevue})` : "livraison externe"));
+      "Instruction de préparation — " + (mode === "interne" ? `livraison interne ${urgent ? "URGENTE jour même" : "(prévue " + datePrevue + ")"}` : "livraison externe"));
     createdExps.push({
       id: expId,
       numExpedition: expId,
@@ -970,6 +978,7 @@ function createCommande(params) {
       codeRetrait: codeRetrait,
       modeLivraison: mode,
       dateLivraisonPrevue: datePrevue || null,
+      urgent: urgent,
     });
 
     // Si livraison interne, créer une ligne dans SUIVI_LIVRAISON_INTERNE
@@ -987,8 +996,35 @@ function createCommande(params) {
   });
 
   notifyT0(cmdId, numCmdNav, nomClient, site, commercialEmail, params.commercialNom, createdExps);
+  if (urgent) notifierUrgence_(numCmdNav, nomClient, site, params.commercialNom || commercialEmail, createdExps);
 
   return { ok: true, cmdId, expeditions: createdExps };
+}
+
+/** Écrit l'en-tête d'une colonne ajoutée après coup (feuilles déjà en production). */
+function ensureEnteteExp_(colIdx, libelle) {
+  try {
+    const sh = getSheet("EXPEDITIONS");
+    const cell = sh.getRange(1, colIdx);
+    if (!cell.getValue()) cell.setValue(libelle);
+  } catch (e) {}
+}
+
+/** Alerte Chat : livraison interne jour même → prévient le responsable des chauffeurs. */
+function notifierUrgence_(numCmdNav, nomClient, site, commercial, exps) {
+  try {
+    const chefs = sheetToObjects(getSheet("UTILISATEURS"), COL_USR)
+      .filter(function(u) { return u.ROLE === "chef_flotte" && u.ACTIF !== false && String(u.ACTIF).toUpperCase() !== "FALSE" && u.EMAIL; })
+      .map(function(u) { return mention(u.EMAIL); });
+    sendChatMessage({
+      text: "🚨 *LIVRAISON URGENTE — jour même* (flotte DMC)\n" +
+            "N° Commande : " + (numCmdNav || "—") + (nomClient ? " · Client : " + nomClient : "") + " · Site : " + (site || "—") + "\n" +
+            "Magasin(s) : " + exps.map(function(x) { return x.magasinLabel || x.zone; }).join(", ") + "\n" +
+            "Demandée par " + commercial +
+            (chefs.length ? "\n📣 " + chefs.join(" ") + " — merci d'attribuer un chauffeur et un véhicule aujourd'hui." : "") +
+            "\n👉 https://fadbazz-bot.github.io/dmc-livraisons/#/flotte/aujourdhui"
+    });
+  } catch (e) { console.error("notifierUrgence_ : " + e.message); }
 }
 
 function serializeCommande(cmd, exps) {
@@ -1322,6 +1358,7 @@ function serializeExp(e) {
     dureeAttente: dureeMin(e.T0, e.T_ENTREE_SITE),
     // Champs module flotte interne
     modeLivraison: e.MODE_LIVRAISON || "externe",
+    urgent: e.URGENT === true || String(e.URGENT).toUpperCase() === "TRUE",
     dateLivraisonPrevue: e.DATE_LIVRAISON_PREVUE || null,
     chauffeurFlotteId: e.CHAUFFEUR_FLOTTE_ID || null,
     confirmeNav: e.CONFIRME_NAV === true || e.CONFIRME_NAV === "TRUE" || e.CONFIRME_NAV === "VRAI",
@@ -3097,6 +3134,7 @@ function createReliquatExpedition(expOrigine, cmd, commandesRestantes, ts) {
     "",                  // ARCHIVED_AT
     numCmdNavReliquat,   // NUM_CMD_NAV_LOCAL
     expOrigine.ID,       // EXP_PARENT_ID — lien vers l'expédition d'origine
+    expOrigine.URGENT ? true : "", // URGENT hérité
   ]);
 
   addEvenement(
@@ -3710,7 +3748,7 @@ function notifyT0(cmdId, numCmdNav, nomClient, site, commercialEmail, commercial
     const vehicule = exp.chauffeur ? `\nChauffeur prévu : ${exp.chauffeur}${exp.plaque ? " · " + exp.plaque : ""}` : "";
 
     sendChatMessage({
-      text: `🚀 *Instruction de préparation* — *${exp.numExpedition}*\n` +
+      text: `${exp.urgent ? "🚨 *URGENT JOUR MÊME* · " : ""}🚀 *Instruction de préparation* — *${exp.numExpedition}*\n` +
             `N° Commande : ${numCmdNav || "—"} · Site : ${site || "—"}${clientLine}` +
             `\nMagasin : *${exp.magasinLabel || exp.zone}*${vehicule}` +
             `\nCommercial : ${commercialNom || commercialEmail}` +
@@ -4611,7 +4649,9 @@ function getLivraisonsFlotte(params) {
   chauffeurs.forEach(c => { chauffeurById[c.ID] = c; });
 
   let filtered = exps;
-  if (params && params.dateDebut && params.dateFin) {
+  // enAttente : toutes les livraisons pas encore soldées, quelle que soit leur date d'inscription
+  const toutesEnAttente = !!(params && (params.enAttente === true || String(params.enAttente) === "true"));
+  if (!toutesEnAttente && params && params.dateDebut && params.dateFin) {
     filtered = filtered.filter(e => {
       if (!e.T0) return false;
       const d = String(e.T0).slice(0, 10);
@@ -4665,6 +4705,7 @@ function getLivraisonsFlotte(params) {
       heureInscription, inscriptionAvant16h, heureSortieSite,
       // Flotte
       modeLivraison: e.MODE_LIVRAISON,
+      urgent: e.URGENT === true || String(e.URGENT).toUpperCase() === "TRUE",
       dateLivraisonPrevue: datePrevue,
       dateLivraisonReelle: dateReelle,
       conformite,                            // "ok" | "retard" | null (pas encore livré)
@@ -4683,7 +4724,8 @@ function getLivraisonsFlotte(params) {
       // Chauffeur assigné
       chauffeurId: e.CHAUFFEUR_FLOTTE_ID || "",
       chauffeurNom: chauffeur ? chauffeur.NOM : (e.CHAUFFEUR || ""),
-      chauffeurPlaque: chauffeur ? chauffeur.PLAQUE : (e.PLAQUE || ""),
+      // Le véhicule est indépendant du chauffeur : plaque choisie > plaque habituelle du chauffeur
+      chauffeurPlaque: suivi.PLAQUE || (chauffeur ? chauffeur.PLAQUE : (e.PLAQUE || "")),
     };
   });
 
@@ -4697,6 +4739,7 @@ function getLivraisonsFlotte(params) {
     }
   }
   if (params && params.etat) final = final.filter(l => l.etat === params.etat);
+  if (toutesEnAttente) final = final.filter(l => l.etat === "en_attente");
 
   return final.sort((a, b) => String(b.t0).localeCompare(String(a.t0)));
 }
@@ -4778,8 +4821,11 @@ function updateSuiviLivraison(params) {
  */
 function assignChauffeurLivraison(params) {
   const { expId, chauffeurId, valider } = params;
+  const plaqueParam = params.plaque;
   if (!expId) throw new Error("expId requis");
-  if (chauffeurId === undefined && valider === undefined) throw new Error("chauffeurId ou valider requis");
+  if (chauffeurId === undefined && valider === undefined && plaqueParam === undefined) {
+    throw new Error("chauffeurId, plaque ou valider requis");
+  }
 
   const { sh: shSuivi, row } = getOrCreateSuiviRow_(expId);
   const C = COL_SUIVI_FLOTTE;
@@ -4787,6 +4833,7 @@ function assignChauffeurLivraison(params) {
 
   if (chauffeurId !== undefined) {
     if (chauffeurId === "") {
+      // Retire le chauffeur ET le véhicule → la livraison repasse « A ATTRIBUER »
       updateExpCol(expId, COL_EXP.CHAUFFEUR_FLOTTE_ID, "");
       updateExpCol(expId, COL_EXP.CHAUFFEUR, "");
       updateExpCol(expId, COL_EXP.PLAQUE, "");
@@ -4795,7 +4842,9 @@ function assignChauffeurLivraison(params) {
     } else {
       const ch = sheetToObjects(getSheet("FLOTTE_CHAUFFEURS"), COL_FLOTTE_CHAUFFEURS).find(c => c.ID === chauffeurId);
       if (!ch) throw new Error("Chauffeur introuvable");
-      nom = ch.NOM || ""; plaque = ch.PLAQUE || "";
+      nom = ch.NOM || "";
+      // Véhicule : celui demandé, sinon la plaque habituelle du chauffeur (modifiable ensuite)
+      plaque = plaqueParam !== undefined ? String(plaqueParam).trim().toUpperCase() : (ch.PLAQUE || "");
       updateExpCol(expId, COL_EXP.CHAUFFEUR_FLOTTE_ID, chauffeurId);
       updateExpCol(expId, COL_EXP.CHAUFFEUR, nom);
       updateExpCol(expId, COL_EXP.PLAQUE, plaque);
@@ -4804,16 +4853,56 @@ function assignChauffeurLivraison(params) {
     }
     // Tout changement de chauffeur annule la validation précédente
     shSuivi.getRange(row, C.ATTRIBUTION_VALIDEE).setValue(false);
+  } else if (plaqueParam !== undefined) {
+    // Seul le véhicule change (le chauffeur reste)
+    plaque = String(plaqueParam).trim().toUpperCase();
+    updateExpCol(expId, COL_EXP.PLAQUE, plaque);
+    shSuivi.getRange(row, C.PLAQUE).setValue(plaque);
+    shSuivi.getRange(row, C.ATTRIBUTION_VALIDEE).setValue(false);
   }
 
   if (valider !== undefined) {
     const veutValider = valider === true || String(valider) === "true";
-    if (veutValider && !shSuivi.getRange(row, C.CHAUFFEUR_ID).getValue()) {
-      throw new Error("Choisis d'abord un chauffeur/véhicule avant de valider l'attribution.");
+    if (veutValider) {
+      if (!shSuivi.getRange(row, C.CHAUFFEUR_ID).getValue()) {
+        throw new Error("Choisis d'abord un chauffeur avant de valider l'attribution.");
+      }
+      if (!String(shSuivi.getRange(row, C.PLAQUE).getValue() || "").trim()) {
+        throw new Error("Indique le véhicule (immatriculation) avant de valider l'attribution.");
+      }
     }
     shSuivi.getRange(row, C.ATTRIBUTION_VALIDEE).setValue(veutValider);
   }
   return { ok: true, chauffeurNom: nom, plaque: plaque };
+}
+
+/**
+ * Replanifier une livraison flotte interne à une autre date (glisser-déposer du planning).
+ * La nouvelle date remet l'attribution à « non validée » : le chauffeur est conservé, à revalider.
+ */
+function replanifierLivraison(params) {
+  const { expId, date } = params;
+  if (!expId) throw new Error("expId requis");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ""))) throw new Error("Date invalide (AAAA-MM-JJ)");
+  const exp = sheetToObjects(getSheet("EXPEDITIONS"), COL_EXP).find(e => e.ID === expId);
+  if (!exp) throw new Error("Expédition introuvable");
+  if (exp.MODE_LIVRAISON !== "interne") throw new Error("Seules les livraisons de la flotte interne se replanifient ici");
+  const ancienne = toIsoDate_(exp.DATE_LIVRAISON_PREVUE);
+  if (ancienne === date) return { ok: true, inchange: true };
+
+  const sh = getSheet("EXPEDITIONS");
+  const r = findRow(sh, COL_EXP.ID, expId);
+  const cell = sh.getRange(r, COL_EXP.DATE_LIVRAISON_PREVUE);
+  cell.setNumberFormat("@"); cell.setValue(date);
+
+  const { sh: shSuivi, row } = getOrCreateSuiviRow_(expId);
+  const c2 = shSuivi.getRange(row, COL_SUIVI_FLOTTE.DATE_PREVUE);
+  c2.setNumberFormat("@"); c2.setValue(date);
+  shSuivi.getRange(row, COL_SUIVI_FLOTTE.ATTRIBUTION_VALIDEE).setValue(false);
+
+  addEvenement(expId, "REPLANIFIEE", params.acteurEmail || "", params.acteurNom || "", now(),
+    "Livraison replanifiée : " + (ancienne || "—") + " → " + date);
+  return { ok: true };
 }
 
 /**

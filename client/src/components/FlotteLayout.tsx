@@ -10,6 +10,8 @@ import {
   Database,
   RefreshCw,
   FileUp,
+  ListTodo,
+  Columns3,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { useAuth } from "@/lib/auth";
@@ -25,7 +27,9 @@ interface FlotteSection {
 
 const SECTIONS: FlotteSection[] = [
   { to: "/flotte/aujourdhui",        label: "Aujourd'hui",   icon: CalendarCheck,  description: "Livraisons du jour" },
+  { to: "/flotte/en-attente",        label: "En attente",     icon: ListTodo,       description: "Toutes les livraisons à faire" },
   { to: "/flotte/planifiees",        label: "Planifiées",     icon: CalendarClock,  description: "Livraisons à venir" },
+  { to: "/flotte/planning",          label: "Planning",       icon: Columns3,        description: "Glisser-déposer" },
   { to: "/flotte/effectuees",        label: "Effectuées",     icon: CheckCircle2,   description: "Livraisons terminées" },
   { to: "/flotte/non-conformites",   label: "Non-conformités",icon: AlertTriangle,  description: "Retards & LOI 10h" },
   { to: "/flotte/kpi",               label: "KPI",            icon: BarChart3,      description: "Tableau de bord" },

@@ -17,6 +17,8 @@ import DashboardPage from "@/pages/Dashboard";
 // Module flotte interne
 import AujourdhuiPage from "@/pages/flotte/Aujourdhui";
 import PlanifieesPage from "@/pages/flotte/Planifiees";
+import EnAttentePage from "@/pages/flotte/EnAttente";
+import PlanningPage from "@/pages/flotte/Planning";
 import EffectueesPage from "@/pages/flotte/Effectuees";
 import NonConformitesPage from "@/pages/flotte/NonConformites";
 import KpiFlottePage from "@/pages/flotte/KpiFlotte";
@@ -63,7 +65,9 @@ function AppRouter() {
       {/* Module flotte interne — 6 sections */}
       <Route path="/flotte" component={() => <Redirect to="/flotte/aujourdhui" />} />
       <Route path="/flotte/aujourdhui"      component={AujourdhuiPage} />
+      <Route path="/flotte/en-attente"      component={EnAttentePage} />
       <Route path="/flotte/planifiees"      component={PlanifieesPage} />
+      <Route path="/flotte/planning"        component={PlanningPage} />
       <Route path="/flotte/effectuees"      component={EffectueesPage} />
       <Route path="/flotte/non-conformites" component={NonConformitesPage} />
       <Route path="/flotte/kpi"             component={KpiFlottePage} />
