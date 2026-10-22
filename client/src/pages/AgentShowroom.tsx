@@ -11,6 +11,7 @@ import { EntreeShowroomModal } from "@/components/modals/EntreeShowroomModal";
 import { SortieShowroomModal } from "@/components/modals/SortieShowroomModal";
 import { formatRelative } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { useVues } from "@/lib/vues";
 import { UrgentBadge } from "@/components/UrgentBadge";
 import { ConfirmerClientModal } from "@/components/modals/ConfirmerClientModal";
 import { BarreOutilsTerrain, pastillesStandard } from "@/components/BarreOutilsTerrain";
@@ -37,7 +38,6 @@ function zoneToSite(zone: string): "Dakar" | "Diamniadio" {
 
 export default function AgentShowroomPage() {
   const { user } = useAuth();
-  const [section, setSection] = useState<Section>("entrer");
   const [fEntrer, setFEntrer] = useState<FiltresTerrain>({ ...FILTRES_VIDES });
   const [fSortir, setFSortir] = useState<FiltresTerrain>({ ...FILTRES_VIDES });
   const [entreeExp, setEntreeExp] = useState<Expedition | null>(null);
@@ -60,6 +60,15 @@ export default function AgentShowroomPage() {
   );
   const aEntrer = mine.filter((e) => e.statut === "en_attente");
   const aSortir = mine.filter((e) => e.statut === "en_chargement" || e.statut === "pret_sortie");
+
+  const [section, setSection] = useVues<Section>(
+    "/agent-showroom",
+    [
+      { key: "entrer", label: "Entrées", n: aEntrer.length },
+      { key: "sortir", label: "Sorties", n: aSortir.length },
+    ],
+    "entrer",
+  );
   const afficherSite = !user?.site;
   const entrerFiltres = useMemo(
     () => appliquer(aEntrer, fEntrer).filter((e) => fEntrer.extra !== "attente" || minutesDepuis(e.t0) > 30),
@@ -97,7 +106,7 @@ export default function AgentShowroomPage() {
         </div>
 
         {/* Tabs */}
-        <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-lg">
+        <div className="md:hidden grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-lg">
           <Tab
             active={section === "entrer"}
             onClick={() => setSection("entrer")}

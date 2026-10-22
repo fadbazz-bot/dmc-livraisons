@@ -12,6 +12,7 @@ import { SortieSiteModal } from "@/components/modals/SortieSiteModal";
 import { formatRelative } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { UrgentBadge } from "@/components/UrgentBadge";
+import { useVues } from "@/lib/vues";
 import { siteDeZone } from "@/lib/portee";
 import { ConfirmerClientModal } from "@/components/modals/ConfirmerClientModal";
 import { BarreOutilsTerrain, pastillesStandard } from "@/components/BarreOutilsTerrain";
@@ -21,7 +22,6 @@ type Section = "clients" | "entrer" | "sortir";
 
 export default function PosteGardePage() {
   const { user } = useAuth();
-  const [section, setSection] = useState<Section>("clients");
   // Un jeu de filtres par onglet : changer d'onglet ne garde pas la recherche d'un autre usage
   const [fClients, setFClients] = useState<FiltresTerrain>({ ...FILTRES_VIDES });
   const [fEntrer, setFEntrer] = useState<FiltresTerrain>({ ...FILTRES_VIDES });
@@ -55,6 +55,16 @@ export default function PosteGardePage() {
     );
     return { aEntrer, aSortir };
   }, [exps, mySite]);
+
+  const [section, setSection] = useVues<Section>(
+    "/poste-garde",
+    [
+      { key: "clients", label: "Clients", n: aEntrer.length },
+      { key: "entrer", label: "Entrées", n: aEntrer.length },
+      { key: "sortir", label: "Sorties", n: aSortir.length },
+    ],
+    "clients",
+  );
 
   const afficherSite = !mySite;
   const magasinsGarde = ["parc", "depot", "sav"];
@@ -102,7 +112,7 @@ export default function PosteGardePage() {
         </div>
 
         {/* Tabs */}
-        <div className="grid grid-cols-3 gap-1 rounded-ctl bg-slate-100 p-1">
+        <div className="md:hidden grid grid-cols-3 gap-1 rounded-ctl bg-slate-100 p-1">
           <Tab
             active={section === "clients"}
             onClick={() => setSection("clients")}

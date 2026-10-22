@@ -11,6 +11,7 @@ import { SaisieCodeModal } from "@/components/modals/SaisieCodeModal";
 import { PhotosChargementModal } from "@/components/modals/PhotosChargementModal";
 import { formatRelative } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { useVues } from "@/lib/vues";
 import { UrgentBadge } from "@/components/UrgentBadge";
 import { BarreOutilsTerrain, pastillesStandard } from "@/components/BarreOutilsTerrain";
 import { appliquer, compter, minutesDepuis, FILTRES_VIDES, type FiltresTerrain } from "@/lib/listeTerrain";
@@ -54,7 +55,6 @@ export default function ResponsablePage() {
   const myCategorie = myZone ? zoneCategorie(myZone) : null;
   const [activeExp, setActiveExp] = useState<Expedition | null>(null);
   const [photoExp, setPhotoExp] = useState<Expedition | null>(null);
-  const [section, setSection] = useState<"code" | "chargement">("code");
   const [fCode, setFCode] = useState<FiltresTerrain>({ ...FILTRES_VIDES });
   const [fCharg, setFCharg] = useState<FiltresTerrain>({ ...FILTRES_VIDES });
 
@@ -89,6 +89,15 @@ export default function ResponsablePage() {
     [exps, myCategorie, user?.site],
   );
   const photosManquantes = enChargement.filter((e) => (e.nbPhotosChargement ?? 0) < PHOTOS_MIN).length;
+
+  const [section, setSection] = useVues<"code" | "chargement">(
+    "/responsable",
+    [
+      { key: "code", label: "Arrivées", n: aTraiter.length },
+      { key: "chargement", label: "Chargement", n: enChargement.length, alerte: photosManquantes > 0 },
+    ],
+    "code",
+  );
 
   // Filtres : le site et le magasin ne sont proposés que si le compte n'y est pas déjà limité
   const afficherSite = !user?.site;
@@ -132,7 +141,7 @@ export default function ResponsablePage() {
             <span className="hidden sm:inline">Rafraîchir</span>
           </button>
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-1 rounded-ctl bg-slate-100 p-1">
+        <div className="md:hidden mt-3 grid grid-cols-2 gap-1 rounded-ctl bg-slate-100 p-1">
           <button
             onClick={() => setSection("code")}
             className={cn(

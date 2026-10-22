@@ -11,6 +11,13 @@ import {
   Settings,
   Database,
   LifeBuoy,
+  CalendarCheck,
+  ListTodo,
+  Columns3,
+  CalendarDays,
+  CheckCircle2,
+  AlertTriangle,
+  FileUp,
 } from "lucide-react";
 import type { ComponentType } from "react";
 import type { Role } from "@/types/domain";
@@ -27,7 +34,30 @@ export interface NavItem {
   flagSuperviseur?: boolean;
   /** Préfixe d'URL pour considérer l'entrée active (sous-pages) */
   prefix?: string;
+  /** Sous-menu (pages distinctes) affiché sous l'entrée dans la barre de gauche */
+  children?: NavChild[];
 }
+
+export interface NavChild {
+  to: string;
+  label: string;
+  icon: ComponentType<{ className?: string }>;
+  /** Rubrique dans laquelle ranger l'entrée */
+  section: string;
+}
+
+/** Flotte interne : 8 écrans rangés en 3 rubriques. */
+export const FLOTTE_SOUS_MENU: NavChild[] = [
+  { to: "/flotte/aujourdhui",      label: "Aujourd'hui",     icon: CalendarCheck, section: "Livraisons" },
+  { to: "/flotte/en-attente",      label: "À faire",         icon: ListTodo,      section: "Livraisons" },
+  { to: "/flotte/planning",        label: "Planning",        icon: Columns3,      section: "Livraisons" },
+  { to: "/flotte/planifiees",      label: "Calendrier",      icon: CalendarDays,  section: "Livraisons" },
+  { to: "/flotte/effectuees",      label: "Effectuées",      icon: CheckCircle2,  section: "Suivi" },
+  { to: "/flotte/non-conformites", label: "Retards & LOI 10h", icon: AlertTriangle, section: "Suivi" },
+  { to: "/flotte/kpi",             label: "KPI",             icon: BarChart3,     section: "Suivi" },
+  { to: "/flotte/import-nav",      label: "Import NAV",      icon: FileUp,        section: "Gestion" },
+  { to: "/flotte/referentiels",    label: "Référentiels",    icon: Database,      section: "Gestion" },
+];
 
 export const NAV: NavItem[] = [
   { to: "/file",              label: "File des expéditions", short: "File",       icon: LayoutList,     group: "commandes", roles: ["admin", "commercial", "responsable", "controleur", "coordinateur"] },
@@ -38,7 +68,7 @@ export const NAV: NavItem[] = [
   { to: "/coordination",      label: "Coordination",         short: "Coordo",     icon: LifeBuoy,       group: "terrain",   roles: ["coordinateur", "admin"] },
   { to: "/non-conformites",   label: "Non-conformités",      short: "Qualité",    icon: ClipboardCheck, group: "terrain",   roles: ["responsable", "controleur", "coordinateur", "admin"] },
   { to: "/dashboard",         label: "Tableau de bord",      short: "KPI",        icon: BarChart3,      group: "pilotage",  roles: ["admin", "commercial", "responsable", "controleur", "coordinateur"] },
-  { to: "/flotte/aujourdhui", label: "Flotte interne",       short: "Flotte",     icon: Truck,          group: "pilotage",  flagSuperviseur: true, prefix: "/flotte" },
+  { to: "/flotte/aujourdhui", label: "Flotte interne",       short: "Flotte",     icon: Truck,          group: "pilotage",  flagSuperviseur: true, prefix: "/flotte", children: FLOTTE_SOUS_MENU },
   { to: "/utilisateurs",      label: "Utilisateurs",         short: "Équipe",     icon: Users,          group: "admin",     roles: ["admin"] },
   { to: "/donnees",           label: "Données",              short: "Données",    icon: Database,       group: "admin",     roles: ["admin"] },
   { to: "/configuration",     label: "Configuration",        short: "Réglages",   icon: Settings,       group: "admin",     roles: ["admin"] },

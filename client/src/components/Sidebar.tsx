@@ -1,12 +1,14 @@
 import { Link, useLocation } from "wouter";
 import { LogOut, Truck } from "lucide-react";
+import { useEtatVues, choisirVue } from "@/lib/vues";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
-import { GROUP_LABELS, ROLE_LABELS, estActif, initiales, navPourUtilisateur, type NavItem } from "@/lib/nav";
+import { GROUP_LABELS, ROLE_LABELS, estActif, initiales, navPourUtilisateur, type NavChild, type NavItem } from "@/lib/nav";
 
 export function Sidebar() {
   const { user, logout } = useAuth();
   const [location] = useLocation();
+  const vues = useEtatVues();
   if (!user) return null;
 
   const items = navPourUtilisateur(user);
@@ -39,9 +41,10 @@ export function Sidebar() {
             {g.items.map((item) => {
               const active = estActif(item, location);
               const Icon = item.icon;
+              const sousVues = active ? vues.vues[item.to] : undefined;
               return (
+                <div key={item.to}>
                 <Link
-                  key={item.to}
                   href={item.to}
                   aria-current={active ? "page" : undefined}
                   className={cn(
@@ -57,6 +60,34 @@ export function Sidebar() {
                   <Icon className={cn("h-[18px] w-[18px] shrink-0", active ? "text-brand-700" : "text-slate-400 group-hover:text-slate-600")} />
                   <span className="truncate">{item.label}</span>
                 </Link>
+                {active && item.children && <SousMenuPages items={item.children} location={location} />}
+                {sousVues && sousVues.length > 1 && (
+                  <div className="ml-[22px] mt-0.5 mb-1 space-y-0.5 border-l border-line pl-2">
+                    {sousVues.map((v) => {
+                      const courante = (vues.courante[item.to] ?? sousVues[0].key) === v.key;
+                      return (
+                        <button
+                          key={v.key}
+                          type="button"
+                          onClick={() => choisirVue(item.to, v.key)}
+                          aria-current={courante ? "true" : undefined}
+                          className={cn(
+                            "flex w-full items-center justify-between gap-2 rounded-ctl px-2.5 py-1.5 text-left text-[13px] transition-colors",
+                            courante ? "bg-brand-50 font-medium text-brand-800" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
+                          )}
+                        >
+                          <span className="truncate">{v.label}</span>
+                          {v.n !== undefined && (
+                            <span className={cn("num rounded-full px-1.5 text-[11px] font-semibold", v.alerte ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-600")}>
+                              {v.n}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                </div>
               );
             })}
           </div>
@@ -87,5 +118,37 @@ export function Sidebar() {
         </div>
       </div>
     </aside>
+  );
+}
+
+/** Sous-menu de pages distinctes (ex. Flotte interne), rangé par rubriques. */
+function SousMenuPages({ items, location }: { items: NavChild[]; location: string }) {
+  const rubriques = Array.from(new Set(items.map((i) => i.section)));
+  return (
+    <div className="ml-[22px] mt-1 mb-2 space-y-2 border-l border-line pl-2">
+      {rubriques.map((r) => (
+        <div key={r} className="space-y-0.5">
+          <div className="px-2.5 pt-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">{r}</div>
+          {items.filter((i) => i.section === r).map((c) => {
+            const actif = location === c.to || (c.to === "/flotte/aujourdhui" && location === "/flotte");
+            const Icon = c.icon;
+            return (
+              <Link
+                key={c.to}
+                href={c.to}
+                aria-current={actif ? "page" : undefined}
+                className={cn(
+                  "flex items-center gap-2 rounded-ctl px-2.5 py-1.5 text-[13px] transition-colors",
+                  actif ? "bg-brand-50 font-medium text-brand-800" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
+                )}
+              >
+                <Icon className={cn("h-3.5 w-3.5 shrink-0", actif ? "text-brand-700" : "text-slate-400")} />
+                <span className="truncate">{c.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      ))}
+    </div>
   );
 }

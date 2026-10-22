@@ -27,11 +27,11 @@ interface FlotteSection {
 
 const SECTIONS: FlotteSection[] = [
   { to: "/flotte/aujourdhui",        label: "Aujourd'hui",   icon: CalendarCheck,  description: "Livraisons du jour" },
-  { to: "/flotte/en-attente",        label: "En attente",     icon: ListTodo,       description: "Toutes les livraisons à faire" },
-  { to: "/flotte/planifiees",        label: "Planifiées",     icon: CalendarClock,  description: "Livraisons à venir" },
+  { to: "/flotte/en-attente",        label: "À faire",         icon: ListTodo,       description: "Toutes les livraisons à faire" },
   { to: "/flotte/planning",          label: "Planning",       icon: Columns3,        description: "Glisser-déposer" },
+  { to: "/flotte/planifiees",        label: "Calendrier",      icon: CalendarClock,  description: "Livraisons à venir" },
   { to: "/flotte/effectuees",        label: "Effectuées",     icon: CheckCircle2,   description: "Livraisons terminées" },
-  { to: "/flotte/non-conformites",   label: "Non-conformités",icon: AlertTriangle,  description: "Retards & LOI 10h" },
+  { to: "/flotte/non-conformites",   label: "Retards & LOI 10h",icon: AlertTriangle,  description: "Retards & LOI 10h" },
   { to: "/flotte/kpi",               label: "KPI",            icon: BarChart3,      description: "Tableau de bord" },
   { to: "/flotte/import-nav",        label: "Import NAV",     icon: FileUp,         description: "Confirmation livraisons" },
   { to: "/flotte/referentiels",      label: "Référentiels",   icon: Database,       description: "Chauffeurs, clients, motifs" },
@@ -48,7 +48,8 @@ interface Props {
 /**
  * Layout commun pour toutes les pages /flotte/*.
  * Affiche un en-tête avec bouton "Synchroniser" qui invalide les queries flotte,
- * puis une barre horizontale des 5 sections, puis le contenu de la page.
+ * puis (mobile uniquement) une barre horizontale des sections ; sur ordinateur les
+ * sections sont dans le sous-menu « Flotte interne » de la barre de gauche.
  *
  * Le bouton "Synchroniser" force un refetch de toutes les données flotte
  * depuis Google Sheets (via Apps Script). Utile si l'utilisateur a modifié
@@ -107,7 +108,7 @@ export function FlotteLayout({ children, subtitle, rightSlot }: Props) {
         }
       >
         {rightSlot && <div className="flex flex-wrap items-center gap-2">{rightSlot}</div>}
-        <nav className="-mx-1 flex gap-1 overflow-x-auto px-1" aria-label="Sections flotte">
+        <nav className="md:hidden -mx-1 flex gap-1 overflow-x-auto px-1" aria-label="Sections flotte">
           {SECTIONS.map((s) => {
             const active = location === s.to || (s.to === "/flotte/aujourdhui" && location === "/flotte");
             const Icon = s.icon;

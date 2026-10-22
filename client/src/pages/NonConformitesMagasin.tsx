@@ -18,6 +18,7 @@ import { dansPeriode, periodeDepuisPreset, type Periode } from "@/lib/periode";
 import { memeMagasin, porteeDe } from "@/lib/portee";
 import { formatDateTime, formatRelative } from "@/lib/format";
 import { cn, includesLower } from "@/lib/cn";
+import { useVues, type Vue } from "@/lib/vues";
 
 type Onglet = "expliquer" | "decider" | "actions" | "cloturees" | "suivi";
 
@@ -88,7 +89,6 @@ export default function NonConformitesMagasinPage() {
   const estCoordinateur = user?.role === "coordinateur";
   const autorise = estControleur || estCoordinateur || user?.role === "responsable";
 
-  const [onglet, setOnglet] = useState<Onglet>(estControleur ? "decider" : "expliquer");
   const [recherche, setRecherche] = useState("");
   const [type, setType] = useState("");
   const portee = useMemo(() => porteeDe(user), [user]);
@@ -143,6 +143,15 @@ export default function NonConformitesMagasinPage() {
   );
   const fiche = ouvert ? toutes.find((n) => n.id === ouvert) ?? null : null;
 
+  const onglets: (Vue & { key: Onglet })[] = [
+    { key: "expliquer", label: "À expliquer", n: parOnglet.expliquer.length, alerte: parOnglet.expliquer.some((x) => x.enRetardJustif) },
+    { key: "decider", label: estControleur ? "À décider" : "En attente contrôleur", n: parOnglet.decider.length },
+    { key: "actions", label: "Actions correctives", n: parOnglet.actions.length, alerte: parOnglet.actions.some((x) => x.enRetardAction) },
+    { key: "cloturees", label: "Clôturées", n: parOnglet.cloturees.length },
+    ...(estControleur || estCoordinateur ? [{ key: "suivi" as Onglet, label: "Suivi chiffré" }] : []),
+  ];
+  const [onglet, setOnglet] = useVues<Onglet>("/non-conformites", onglets, estControleur ? "decider" : "expliquer");
+
   if (!autorise) {
     return (
       <div className="h-full flex items-center justify-center p-6">
@@ -154,13 +163,6 @@ export default function NonConformitesMagasinPage() {
     );
   }
 
-  const onglets: { key: Onglet; label: string; n?: number; alerte?: boolean }[] = [
-    { key: "expliquer", label: "À expliquer", n: parOnglet.expliquer.length, alerte: parOnglet.expliquer.some((x) => x.enRetardJustif) },
-    { key: "decider", label: estControleur ? "À décider" : "En attente contrôleur", n: parOnglet.decider.length },
-    { key: "actions", label: "Actions correctives", n: parOnglet.actions.length, alerte: parOnglet.actions.some((x) => x.enRetardAction) },
-    { key: "cloturees", label: "Clôturées", n: parOnglet.cloturees.length },
-    ...(estControleur || estCoordinateur ? [{ key: "suivi" as Onglet, label: "Suivi chiffré" }] : []),
-  ];
 
   const liste = onglet === "suivi" ? [] : parOnglet[onglet];
 
@@ -217,7 +219,7 @@ export default function NonConformitesMagasinPage() {
           <SiteMagasinSelect portee={portee} site={site} zone={zone} onSite={setSite} onZone={setZone} />
           <PeriodeSelect value={periode} onChange={setPeriode} />
         </div>
-        <div className="flex gap-1 overflow-x-auto -mb-3 pb-0">
+        <div className="md:hidden flex gap-1 overflow-x-auto -mb-3 pb-0">
           {onglets.map((o) => (
             <button
               key={o.key}
