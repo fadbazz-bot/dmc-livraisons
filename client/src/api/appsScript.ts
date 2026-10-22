@@ -386,6 +386,16 @@ export interface NcListe {
 
 export type NcDecision = "acceptee" | "contestee" | "confirmee";
 
+/** Coordination : corriger les erreurs de validation (rôle coordinateur / admin). */
+export const coordination = {
+  annuler: (input: { expId: string; acteurEmail: string; motif: string }) =>
+    apiPost<{ ok: true }>("annulerEtapeExpedition", input),
+  transferer: (input: { deExpId: string; versExpId: string; acteurEmail: string; motif: string }) =>
+    apiPost<{ ok: true }>("transfererEntree", input),
+  corriger: (input: { expId: string; acteurEmail: string; motif: string; plaque?: string; chauffeur?: string; telChauffeur?: string }) =>
+    apiPost<{ ok: true; modifications: string[] }>("corrigerEntree", input),
+};
+
 export const nonConformites = {
   lister: (acteurEmail: string, depuis?: string) =>
     apiGet<NcListe>("getNonConformites", depuis ? { acteurEmail, depuis } : { acteurEmail }),
@@ -597,6 +607,7 @@ export const api = {
   medias,
   photos,
   nonConformites,
+  coordination,
   admin,
   utils,
   // Module flotte interne

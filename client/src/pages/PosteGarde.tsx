@@ -10,7 +10,10 @@ import { JalonTimeline } from "@/components/JalonTimeline";
 import { EntreeSiteModal } from "@/components/modals/EntreeSiteModal";
 import { SortieSiteModal } from "@/components/modals/SortieSiteModal";
 import { formatRelative } from "@/lib/format";
-import { cn, includesLower } from "@/lib/cn";
+import { cn } from "@/lib/cn";
+import { correspond } from "@/lib/similarite";
+import { siteDeZone } from "@/lib/portee";
+import { ConfirmerClientModal } from "@/components/modals/ConfirmerClientModal";
 
 type Section = "clients" | "entrer" | "sortir";
 
@@ -18,28 +21,34 @@ export default function PosteGardePage() {
   const { user } = useAuth();
   const [section, setSection] = useState<Section>("clients");
   const [entreeExp, setEntreeExp] = useState<Expedition | null>(null);
+  const [aConfirmer, setAConfirmer] = useState<Expedition | null>(null);
   const [sortieExp, setSortieExp] = useState<Expedition | null>(null);
 
   const { data: exps = [], isLoading, refetch, isFetching, error } = useQuery({
-    queryKey: ["expeditions"],
+    queryKey: ["expeditions", "garde", user?.id],
     queryFn: async () => {
-      const res = await api.expeditions.list();
-      cacheSet("expeditions", res);
+      const res = await api.expeditions.list({ acteurEmail: user?.email });
+      cacheSet("expeditions:garde", res);
       return res;
     },
     refetchInterval: 30_000,
-    ...persistedCache<Expedition[]>("expeditions"),
+    ...persistedCache<Expedition[]>("expeditions:garde"),
   });
 
   const mySite = user?.site || "";
 
+  // Le poste de garde ne gère que SON site, et jamais le showroom (porte à part).
+  // Double filtrage : le serveur le fait déjà, mais le cache local peut contenir d'anciennes données.
   const { aEntrer, aSortir } = useMemo(() => {
-    const aEntrer = exps.filter((e) => e.statut === "en_attente");
-    const aSortir = exps.filter(
+    const miens = exps.filter(
+      (e) => !String(e.zone || "").toLowerCase().includes("showroom") && (!mySite || siteDeZone(e.zone) === mySite),
+    );
+    const aEntrer = miens.filter((e) => e.statut === "en_attente");
+    const aSortir = miens.filter(
       (e) => e.statut === "en_chargement" || e.statut === "pret_sortie",
     );
     return { aEntrer, aSortir };
-  }, [exps]);
+  }, [exps, mySite]);
 
   return (
     <div className="h-full flex flex-col">
@@ -106,12 +115,12 @@ export default function PosteGardePage() {
             </p>
           </div>
         ) : section === "clients" ? (
-          <ClientsView exps={aEntrer} onPick={(e) => setEntreeExp(e)} />
+          <ClientsView exps={aEntrer} onPick={(e) => setAConfirmer(e)} />
         ) : section === "entrer" ? (
           <ExpList
             list={aEntrer}
             actionLabel="Entrée site"
-            onAction={(e) => setEntreeExp(e)}
+            onAction={(e) => setAConfirmer(e)}
             empty="Aucun camion en attente d'entrée."
           />
         ) : (
@@ -125,6 +134,14 @@ export default function PosteGardePage() {
       </div>
 
       {/* Modals */}
+      {aConfirmer && (
+        <ConfirmerClientModal
+          exp={aConfirmer}
+          voisins={aEntrer}
+          onClose={() => setAConfirmer(null)}
+          onConfirm={() => { setEntreeExp(aConfirmer); setAConfirmer(null); }}
+        />
+      )}
       {entreeExp && (
         <EntreeSiteModal exp={entreeExp} open onClose={() => setEntreeExp(null)} />
       )}
@@ -200,7 +217,7 @@ function ClientsView({ exps, onPick }: { exps: Expedition[]; onPick: (e: Expedit
   const filtered = useMemo(() => {
     const term = search.trim();
     if (!term) return groups;
-    return groups.filter((g) => includesLower(g.nom, term));
+    return groups.filter((g) => correspond(g.nom, term));
   }, [groups, search]);
 
   function toggle(nom: string) {

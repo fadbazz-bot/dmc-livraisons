@@ -85,7 +85,8 @@ export default function NonConformitesMagasinPage() {
   const { user } = useAuth();
   const email = user?.email ?? "";
   const estControleur = user?.role === "controleur" || user?.role === "admin";
-  const autorise = estControleur || user?.role === "responsable";
+  const estCoordinateur = user?.role === "coordinateur";
+  const autorise = estControleur || estCoordinateur || user?.role === "responsable";
 
   const [onglet, setOnglet] = useState<Onglet>(estControleur ? "decider" : "expliquer");
   const [recherche, setRecherche] = useState("");
@@ -147,7 +148,7 @@ export default function NonConformitesMagasinPage() {
       <div className="h-full flex items-center justify-center p-6">
         <div className="card p-8 text-center max-w-md">
           <h2 className="text-lg font-semibold text-slate-900 mb-2">Accès réservé</h2>
-          <p className="text-sm text-slate-500">Cette page est réservée aux responsables et aux contrôleurs.</p>
+          <p className="text-sm text-slate-500">Cette page est réservée aux responsables, aux coordinateurs et aux contrôleurs.</p>
         </div>
       </div>
     );
@@ -158,7 +159,7 @@ export default function NonConformitesMagasinPage() {
     { key: "decider", label: estControleur ? "À décider" : "En attente contrôleur", n: parOnglet.decider.length },
     { key: "actions", label: "Actions correctives", n: parOnglet.actions.length, alerte: parOnglet.actions.some((x) => x.enRetardAction) },
     { key: "cloturees", label: "Clôturées", n: parOnglet.cloturees.length },
-    ...(estControleur ? [{ key: "suivi" as Onglet, label: "Suivi chiffré" }] : []),
+    ...(estControleur || estCoordinateur ? [{ key: "suivi" as Onglet, label: "Suivi chiffré" }] : []),
   ];
 
   const liste = onglet === "suivi" ? [] : parOnglet[onglet];
@@ -183,7 +184,7 @@ export default function NonConformitesMagasinPage() {
                 <span className="hidden sm:inline">Nouveau constat</span>
               </button>
             )}
-            {estControleur && (
+            {(estControleur || estCoordinateur) && (
               <button className="btn-outline gap-1.5" onClick={() => exporterCsv(filtrees)} disabled={!filtrees.length} title="Exporter la liste filtrée (Excel)">
                 <Download className="h-4 w-4" />
                 <span className="hidden sm:inline">Export</span>
@@ -322,7 +323,7 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
   const toast = useToast();
   const qc = useQueryClient();
   const email = user?.email ?? "";
-  const peutExpliquer = (user?.role === "responsable" || user?.role === "admin") && (n.statut === "ouverte" || n.statut === "contestee");
+  const peutExpliquer = (user?.role === "responsable" || user?.role === "coordinateur" || user?.role === "admin") && (n.statut === "ouverte" || n.statut === "contestee");
   const peutDecider = estControleur && n.statut === "expliquee";
   const peutTerminer = n.statut === "action_en_cours";
 
@@ -564,7 +565,7 @@ function NouveauConstat({ onClose }: { onClose: () => void }) {
   const { user } = useAuth();
   const toast = useToast();
   const qc = useQueryClient();
-  const sitesDispo = user?.site && user.role === "controleur" ? [user.site] : ["Dakar", "Diamniadio"];
+  const sitesDispo = user?.site && (user.role === "controleur" || user.role === "coordinateur") ? [user.site] : ["Dakar", "Diamniadio"];
   const [site, setSite] = useState(sitesDispo[0]);
   const [zone, setZone] = useState("");
   const [numCmd, setNumCmd] = useState("");

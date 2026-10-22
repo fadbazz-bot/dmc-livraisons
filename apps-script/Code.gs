@@ -268,6 +268,10 @@ function handleRequest(e) {
       "decisionNonConformite":        () => decisionNonConformite(params),
       "terminerActionNonConformite":  () => terminerActionNonConformite(params),
       "creerNonConformite":           () => creerNonConformite(params),
+      // Coordination (corrections)
+      "annulerEtapeExpedition":       () => annulerEtapeExpedition(params),
+      "transfererEntree":             () => transfererEntree(params),
+      "corrigerEntree":               () => corrigerEntree(params),
       // Référentiels
       "getUtilisateurs":        () => getUtilisateurs(params),
       "getAllUtilisateurs":     () => getAllUtilisateurs(),
@@ -1052,6 +1056,7 @@ function zoneEstShowroom(zone) {
  * ne peut contourner ce filtre — c'est un cloisonnement serveur.
  * Un agent_showroom est cloisonné à la fois par site ET par zone (Showroom
  * uniquement — jamais Parc Acier / Dépôt Quincaillerie).
+ * Le poste de garde est limité à son site et ne voit jamais le showroom.
  * Pour un responsable magasin, on limite aussi à sa zone (magasin).
  * Les autres rôles (admin, controleur, commercial, chef_flotte) voient tout.
  */
@@ -1072,10 +1077,13 @@ function getExpeditions(params) {
       return u.EMAIL && u.EMAIL.toLowerCase() === String(params.acteurEmail).toLowerCase();
     });
     if (acteur) {
-      if (acteur.ROLE === "controleur" && acteur.SITE) {
+      if ((acteur.ROLE === "controleur" || acteur.ROLE === "coordinateur") && acteur.SITE) {
         exps = exps.filter(function(e) { return zoneToSite(e.ZONE) === acteur.SITE; });
-      } else if (acteur.ROLE === "chef_poste" && acteur.SITE) {
-        exps = exps.filter(function(e) { return zoneToSite(e.ZONE) === acteur.SITE; });
+      } else if (acteur.ROLE === "chef_poste") {
+        // Poste de garde : son site ET jamais le showroom (porte à part, gérée par l'agent showroom)
+        exps = exps.filter(function(e) {
+          return (!acteur.SITE || zoneToSite(e.ZONE) === acteur.SITE) && !zoneEstShowroom(e.ZONE);
+        });
       } else if (acteur.ROLE === "agent_showroom" && acteur.SITE) {
         // Agent showroom : cloisonné à son site ET uniquement aux commandes Showroom
         // (jamais Parc Acier / Dépôt Quincaillerie, qui restent au poste de garde).
@@ -1549,6 +1557,7 @@ const NC_TYPES = {
   ATTENTE:           { label: "Attente / blocage anormal",            actif: true },
   VALIDATION_RAPIDE: { label: "Arrivée validée trop vite",            actif: true },
   CONSTAT:           { label: "Constat du contrôleur",                actif: true },
+  ERREUR_VALIDATION: { label: "Erreur de validation corrigée",        actif: true },
 };
 
 const COL_NC = {
@@ -1638,7 +1647,7 @@ function ncOuvrir_(type, exp, detail, opts) {
       const sh = ncSheet_();
       const toutes = ncRead_();
       if (exp && !opts.manuel) {
-        const doublon = toutes.find(function(n) { return n.EXP_ID === exp.ID && n.TYPE === type; });
+        const doublon = toutes.find(function(n) { return n.EXP_ID === exp.ID && n.TYPE === type && n.DECISION !== "annulee"; });
         if (doublon) return String(doublon.ID);
       }
       const cmd = exp ? (getCmdsCache()[exp.CMD_ID] || {}) : {};
@@ -1661,8 +1670,13 @@ function ncOuvrir_(type, exp, detail, opts) {
       ligne[COL_NC.RESPONSABLE_EMAIL - 1] = resp;
       ligne[COL_NC.CREE_LE - 1] = ts;
       ligne[COL_NC.DETAIL - 1] = detail || "";
-      ligne[COL_NC.STATUT - 1] = "ouverte";
+      ligne[COL_NC.STATUT - 1] = opts.statut || "ouverte";
       ligne[COL_NC.ORIGINE - 1] = opts.origine || (opts.manuel ? "manuel" : "auto");
+      if (opts.statut === "cloturee") {
+        ligne[COL_NC.CLOTURE_LE - 1] = ts;
+        ligne[COL_NC.DECISION - 1] = opts.decision || "";
+        ligne[COL_NC.DECISION_LE - 1] = ts;
+      }
       if (opts.relanceLe) ligne[COL_NC.RELANCE_LE - 1] = opts.relanceLe;
       ligne[COL_NC.HISTORIQUE - 1] = ncHisto_("", opts.parEmail || "système", "Non-conformité ouverte : " + (detail || NC_TYPES[type].label));
       sh.appendRow(ligne);
@@ -1697,7 +1711,7 @@ function ncNotifierOuverture_(type, id, numCmd, client, site, zone, resp, detail
 function ncVisible_(u, n) {
   if (u.ROLE === "admin") return true;
   const siteNc = String(n.SITE || "");
-  if (u.ROLE === "controleur") return !u.SITE || !siteNc || u.SITE === siteNc;
+  if (u.ROLE === "controleur" || u.ROLE === "coordinateur") return !u.SITE || !siteNc || u.SITE === siteNc;
   if (u.ROLE === "responsable") {
     const mails = String(n.RESPONSABLE_EMAIL || "").toLowerCase();
     if (mails && mails.split(",").map(function(s) { return s.trim(); }).indexOf(String(u.EMAIL).toLowerCase()) !== -1) return true;
@@ -1745,7 +1759,7 @@ function ncSerialize_(n) {
  */
 function getNonConformites(params) {
   const u = ncUser_(params.acteurEmail);
-  if (["admin", "controleur", "responsable"].indexOf(u.ROLE) === -1) return { liste: [], types: ncTypesPublics_() };
+  if (["admin", "controleur", "coordinateur", "responsable"].indexOf(u.ROLE) === -1) return { liste: [], types: ncTypesPublics_() };
   try { ncBalayageThrottle_(); } catch (e) { console.error("balayage NC : " + e.message); }
   const depuis = params.depuis ? new Date(params.depuis + "T00:00:00") : new Date(Date.now() - 90 * 86400000);
   const liste = ncRead_().filter(function(n) {
@@ -1791,7 +1805,7 @@ function ncLire_(sh, row) {
 /** Le responsable explique la NC (ou en donne une nouvelle après contestation). */
 function justifierNonConformite(params) {
   const u = ncUser_(params.acteurEmail);
-  if (["responsable", "admin"].indexOf(u.ROLE) === -1) throw new Error("Seul le responsable du magasin peut expliquer une non-conformité");
+  if (["responsable", "coordinateur", "admin"].indexOf(u.ROLE) === -1) throw new Error("Seul le responsable du magasin (ou le coordinateur) peut expliquer une non-conformité");
   const explication = String(params.explication || "").trim();
   if (explication.length < 5) throw new Error("Explication requise (quelques mots au moins)");
   const lock = LockService.getScriptLock(); lock.waitLock(15000);
@@ -1910,7 +1924,7 @@ function ncNotifierDecision_(n, decision, comm, action, echeance, u) {
 /** Action corrective réalisée → clôture. */
 function terminerActionNonConformite(params) {
   const u = ncUser_(params.acteurEmail);
-  if (["responsable", "controleur", "admin"].indexOf(u.ROLE) === -1) throw new Error("Non autorisé");
+  if (["responsable", "controleur", "coordinateur", "admin"].indexOf(u.ROLE) === -1) throw new Error("Non autorisé");
   const comm = String(params.commentaire || "").trim();
   if (!comm) throw new Error("Décris ce qui a été fait");
   const lock = LockService.getScriptLock(); lock.waitLock(15000);
@@ -2083,6 +2097,237 @@ function ncSyncDecisionHistorique_(expId, decision, email, commentaire) {
     champs.HISTORIQUE = ncHisto_(n.HISTORIQUE, email, decision === "acceptee" ? "Explication acceptée" + (commentaire ? " : " + commentaire : "") : "Explication contestée : " + commentaire);
     ncMaj_(sh, n._row, champs);
   } catch (e) { console.error("ncSyncDecisionHistorique_ : " + e.message); }
+}
+
+// ─── COORDINATION — CORRECTION DES ERREURS DE VALIDATION ──────────────────────
+//
+// Rôle « coordinateur » : aide les agents terrain et corrige leurs erreurs, sans droits d'administration.
+//  - annulerEtapeExpedition : annule la DERNIÈRE étape validée (sortie, arrivée client ou entrée)
+//  - transfererEntree       : l'entrée a été validée sur le mauvais client → on la déplace vers le bon
+//  - corrigerEntree         : corrige la plaque / le chauffeur / le téléphone saisis à l'entrée
+// Chaque action exige un motif, est tracée dans EVENEMENTS, prévient le Chat, et enregistre une
+// non-conformité « Erreur de validation corrigée » (déjà clôturée : elle sert aux statistiques).
+// Un coordinateur rattaché à un site ne peut agir que sur ce site ; l'admin peut tout corriger.
+
+function coordUser_(email, exp) {
+  const u = ncUser_(email);
+  if (["coordinateur", "admin"].indexOf(u.ROLE) === -1) throw new Error("Réservé au coordinateur");
+  if (exp && u.ROLE === "coordinateur" && u.SITE && zoneToSite(exp.ZONE) !== u.SITE) {
+    throw new Error("Cette expédition concerne l'autre site");
+  }
+  return u;
+}
+
+function coordLireExp_(expId) {
+  if (!expId) throw new Error("expId requis");
+  const exp = sheetToObjects(getSheet("EXPEDITIONS"), COL_EXP).find(function(e) { return e.ID === expId; });
+  if (!exp) throw new Error("Expédition introuvable");
+  return exp;
+}
+
+function coordMotif_(params) {
+  const motif = String(params.motif || "").trim();
+  if (motif.length < 5) throw new Error("Motif obligatoire (quelques mots au moins)");
+  return motif;
+}
+
+/** Dernière étape validée d'une expédition : "sortie" | "arrivee" | "entree" | null. */
+function coordEtape_(exp) {
+  if (exp.T_SORTIE_SITE) return "sortie";
+  if (exp.T_CHARGEMENT_FINI) return "arrivee";
+  if (exp.T_ENTREE_SITE) return "entree";
+  return null;
+}
+
+const COORD_ETAPE_LABEL = { sortie: "Sortie du site", arrivee: "Arrivée du client au magasin", entree: "Entrée sur le site" };
+const COORD_ETAPE_JALONS = {
+  sortie: ["SORTIE_SITE", "SORTIE_SHOWROOM"],
+  arrivee: ["SAISIE_CODE"],
+  entree: ["ENTREE_SITE", "ENTREE_SHOWROOM"],
+};
+
+/** E-mail de l'agent qui avait validé l'étape (dernier événement correspondant). */
+function coordAuteurEtape_(expId, etape) {
+  const jalons = COORD_ETAPE_JALONS[etape] || [];
+  const evts = sheetToObjects(getSheet("EVENEMENTS"), COL_EVT).filter(function(e) {
+    return e.EXP_ID === expId && jalons.indexOf(e.JALON) !== -1;
+  });
+  return evts.length ? { email: evts[evts.length - 1].ACTEUR_EMAIL, nom: evts[evts.length - 1].ACTEUR_NOM } : { email: "", nom: "" };
+}
+
+function coordDecolorer_(expId) {
+  try {
+    const sh = getSheet("EXPEDITIONS");
+    const row = findRow(sh, COL_EXP.ID, expId);
+    if (row > 0) sh.getRange(row, 1, 1, 18).setBackground(null);
+  } catch (e) {}
+}
+
+function coordRevenirCommande_(cmdId) {
+  try {
+    const shCmd = getSheet("COMMANDES");
+    const row = findRow(shCmd, COL_CMD.ID, cmdId);
+    if (row > 0 && shCmd.getRange(row, COL_CMD.STATUT).getValue() === "terminee") {
+      shCmd.getRange(row, COL_CMD.STATUT).setValue("en_attente");
+    }
+  } catch (e) {}
+}
+
+/** Clôture les NC automatiques devenues sans objet (l'étape qui les avait déclenchées est annulée). */
+function coordClasserNc_(expId, types, texte, par) {
+  try {
+    const sh = ncSheet_();
+    ncRead_().forEach(function(n) {
+      if (n.EXP_ID !== expId || types.indexOf(n.TYPE) === -1 || n.STATUT === "cloturee") return;
+      const ts = now();
+      ncMaj_(sh, n._row, {
+        STATUT: "cloturee", DECISION: "annulee", DECISION_LE: ts, CLOTURE_LE: ts,
+        HISTORIQUE: ncHisto_(n.HISTORIQUE, par, texte),
+      });
+    });
+  } catch (e) { console.error("coordClasserNc_ : " + e.message); }
+}
+
+function coordNotifier_(texte) {
+  try { sendChatMessage({ text: texte + "\n👉 https://fadbazz-bot.github.io/dmc-livraisons/" }); } catch (e) {}
+}
+
+function coordNumero_(exp) {
+  const cmd = getCmdsCache()[exp.CMD_ID] || {};
+  return (exp.NUM_CMD_NAV_LOCAL || cmd.NUM_CMD_NAV || exp.NUM_EXPEDITION || exp.ID) + (cmd.NOM_CLIENT ? " · " + cmd.NOM_CLIENT : "");
+}
+
+/** Annule la dernière étape validée (motif obligatoire). */
+function annulerEtapeExpedition(params) {
+  const exp0 = coordLireExp_(params.expId);
+  const u = coordUser_(params.acteurEmail, exp0);
+  const motif = coordMotif_(params);
+  let apres = null;
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const exp = coordLireExp_(params.expId); // relecture sous verrou
+    const etape = coordEtape_(exp);
+    if (!etape) throw new Error("Aucune étape à annuler sur cette expédition");
+    const auteur = coordAuteurEtape_(exp.ID, etape);
+    const id = exp.ID;
+    const col = function(c, v) { updateExpCol(id, c, v); };
+
+    if (etape === "sortie") {
+      col(COL_EXP.T_SORTIE_SITE, "");
+      col(COL_EXP.MOTIF_RETARD, ""); col(COL_EXP.COMMENTAIRE_RETARD, "");
+      col(COL_EXP.VALIDATION_CONTROLEUR, ""); col(COL_EXP.CONTROLEUR_EMAIL, ""); col(COL_EXP.COMMENTAIRE_CONTROLEUR, "");
+      col(COL_EXP.STATUT, "en_chargement");
+      coordDecolorer_(id);
+      coordRevenirCommande_(exp.CMD_ID);
+      coordClasserNc_(id, ["RETARD", "SORTIE_SANS_PHOTOS"], "Sortie annulée par le coordinateur — non-conformité sans objet", u.NOM || u.EMAIL);
+    } else if (etape === "arrivee") {
+      const enfants = sheetToObjects(getSheet("EXPEDITIONS"), COL_EXP).filter(function(e) { return e.EXP_PARENT_ID === id; });
+      if (enfants.length) throw new Error("Un reliquat a été créé à cette étape : demande à l'administrateur de la corriger.");
+      col(COL_EXP.T_CHARGEMENT_FINI, "");
+      col(COL_EXP.RESPONSABLE_EMAIL, ""); col(COL_EXP.NOM_ACTEUR_RESPONSABLE, "");
+      col(COL_EXP.STATUT, "entree_site");
+      coordClasserNc_(id, ["PLAQUE", "VALIDATION_RAPIDE"], "Arrivée annulée par le coordinateur — non-conformité sans objet", u.NOM || u.EMAIL);
+    } else { // entree
+      col(COL_EXP.T_ENTREE_SITE, ""); col(COL_EXP.PLAQUE, ""); col(COL_EXP.CHAUFFEUR, ""); col(COL_EXP.TEL_CHAUFFEUR, "");
+      col(COL_EXP.CHEF_POSTE_EMAIL, ""); col(COL_EXP.NOM_ACTEUR_GARDE, "");
+      col(COL_EXP.STATUT, "en_attente");
+      // Les photos de l'entrée annulée ne doivent pas ressortir à la prochaine entrée
+      try {
+        const shM = getSheet("MEDIAS");
+        sheetToObjects(shM, COL_MED).forEach(function(m) {
+          if (m.EXP_ID === id && (m.TYPE === "plaque" || m.TYPE === "permis")) shM.getRange(m._row, COL_MED.TYPE).setValue(m.TYPE + "_annulee");
+        });
+      } catch (e) {}
+    }
+
+    const ts = now();
+    addEvenement(id, "ETAPE_ANNULEE", u.EMAIL, u.NOM, ts, "Étape annulée : " + COORD_ETAPE_LABEL[etape] + " — motif : " + motif);
+    apres = function() {
+      ncOuvrir_("ERREUR_VALIDATION", exp,
+        "« " + COORD_ETAPE_LABEL[etape] + " » annulée par " + (u.NOM || u.EMAIL) + " — motif : " + motif,
+        { manuel: true, parEmail: u.EMAIL, responsableEmail: auteur.email || undefined, silencieux: true, statut: "cloturee", decision: "enregistree" });
+      coordNotifier_("↩️ *Étape annulée* — " + COORD_ETAPE_LABEL[etape] + "\n" + coordNumero_(exp) + " (" + exp.ZONE + ")\n" +
+        "Par " + (u.NOM || u.EMAIL) + " — motif : " + motif);
+    };
+  } finally { lock.releaseLock(); }
+  // Hors verrou : ncOuvrir_ prend lui-même le verrou (non réentrant)
+  if (apres) apres();
+  return { ok: true };
+}
+
+/** L'entrée a été validée sur le mauvais client : on la déplace vers la bonne expédition (photos comprises). */
+function transfererEntree(params) {
+  const de = coordLireExp_(params.deExpId);
+  const vers = coordLireExp_(params.versExpId);
+  const u = coordUser_(params.acteurEmail, de);
+  coordUser_(params.acteurEmail, vers);
+  const motif = coordMotif_(params);
+  if (de.ID === vers.ID) throw new Error("Choisis une autre expédition");
+  let apres = null;
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const src = coordLireExp_(params.deExpId), dst = coordLireExp_(params.versExpId);
+    if (!src.T_ENTREE_SITE) throw new Error("Aucune entrée à déplacer sur l'expédition d'origine");
+    if (src.T_CHARGEMENT_FINI) throw new Error("L'arrivée au magasin a déjà été validée : annule d'abord cette étape.");
+    if (dst.T_ENTREE_SITE || dst.STATUT !== "en_attente") throw new Error("La nouvelle expédition n'est pas en attente d'entrée");
+    if (zoneToSite(src.ZONE) !== zoneToSite(dst.ZONE)) throw new Error("Les deux expéditions ne sont pas sur le même site");
+    if (zoneEstShowroom(src.ZONE) !== zoneEstShowroom(dst.ZONE)) {
+      throw new Error("Une entrée showroom et une entrée poste de garde ne sont pas interchangeables");
+    }
+    const auteur = coordAuteurEtape_(src.ID, "entree");
+    const set = function(id, c, v) { updateExpCol(id, c, v); };
+    // Recopie vers la bonne expédition
+    set(dst.ID, COL_EXP.T_ENTREE_SITE, src.T_ENTREE_SITE);
+    set(dst.ID, COL_EXP.PLAQUE, src.PLAQUE); set(dst.ID, COL_EXP.CHAUFFEUR, src.CHAUFFEUR);
+    set(dst.ID, COL_EXP.TEL_CHAUFFEUR, src.TEL_CHAUFFEUR);
+    set(dst.ID, COL_EXP.CHEF_POSTE_EMAIL, src.CHEF_POSTE_EMAIL); set(dst.ID, COL_EXP.NOM_ACTEUR_GARDE, src.NOM_ACTEUR_GARDE);
+    set(dst.ID, COL_EXP.STATUT, "entree_site");
+    // Photos plaque / permis : elles suivent le véhicule
+    try {
+      const shM = getSheet("MEDIAS");
+      sheetToObjects(shM, COL_MED).forEach(function(m) {
+        if (m.EXP_ID === src.ID && (m.TYPE === "plaque" || m.TYPE === "permis")) shM.getRange(m._row, COL_MED.EXP_ID).setValue(dst.ID);
+      });
+    } catch (e) {}
+    // Remise à zéro de l'expédition d'origine
+    set(src.ID, COL_EXP.T_ENTREE_SITE, ""); set(src.ID, COL_EXP.PLAQUE, ""); set(src.ID, COL_EXP.CHAUFFEUR, "");
+    set(src.ID, COL_EXP.TEL_CHAUFFEUR, ""); set(src.ID, COL_EXP.CHEF_POSTE_EMAIL, ""); set(src.ID, COL_EXP.NOM_ACTEUR_GARDE, "");
+    set(src.ID, COL_EXP.STATUT, "en_attente");
+
+    const ts = now();
+    addEvenement(src.ID, "ENTREE_TRANSFEREE", u.EMAIL, u.NOM, ts, "Entrée déplacée vers « " + coordNumero_(dst) + " » (" + dst.ZONE + ") — motif : " + motif);
+    addEvenement(dst.ID, "ENTREE_TRANSFEREE", u.EMAIL, u.NOM, ts, "Entrée reçue depuis « " + coordNumero_(src) + " » (" + src.ZONE + ") — " + src.PLAQUE + " · " + src.CHAUFFEUR + " — motif : " + motif);
+    apres = function() {
+      ncOuvrir_("ERREUR_VALIDATION", src,
+        "Entrée validée sur le mauvais client, déplacée vers « " + coordNumero_(dst) + " » par " + (u.NOM || u.EMAIL) + " — motif : " + motif,
+        { manuel: true, parEmail: u.EMAIL, responsableEmail: auteur.email || undefined, silencieux: true, statut: "cloturee", decision: "enregistree" });
+      coordNotifier_("🔁 *Entrée corrigée — mauvais client*\nDe : " + coordNumero_(src) + " (" + src.ZONE + ")\nVers : " + coordNumero_(dst) + " (" + dst.ZONE + ")\n" +
+        "Véhicule " + (src.PLAQUE || "—") + " · " + (src.CHAUFFEUR || "—") + "\nPar " + (u.NOM || u.EMAIL) + " — motif : " + motif);
+      try { notifyEntreeSite(dst, getCmdsCache()[dst.CMD_ID] || {}, u.NOM, u.EMAIL, ts, src.PLAQUE, src.CHAUFFEUR); } catch (e) {}
+    };
+  } finally { lock.releaseLock(); }
+  if (apres) apres();
+  return { ok: true };
+}
+
+/** Corrige la plaque / le chauffeur / le téléphone saisis à l'entrée (avant ou après l'arrivée du client). */
+function corrigerEntree(params) {
+  const exp = coordLireExp_(params.expId);
+  const u = coordUser_(params.acteurEmail, exp);
+  const motif = coordMotif_(params);
+  if (!exp.T_ENTREE_SITE) throw new Error("Aucune entrée enregistrée sur cette expédition");
+  const plaque = params.plaque !== undefined ? String(params.plaque).trim().toUpperCase() : undefined;
+  const chauffeur = params.chauffeur !== undefined ? String(params.chauffeur).trim() : undefined;
+  const tel = params.telChauffeur !== undefined ? String(params.telChauffeur).trim() : undefined;
+  if (plaque === "" && !zoneEstShowroom(exp.ZONE)) throw new Error("La plaque ne peut pas être vide");
+  if (chauffeur === "" && !zoneEstShowroom(exp.ZONE)) throw new Error("Le nom du chauffeur ne peut pas être vide");
+  const changes = [];
+  if (plaque !== undefined && plaque !== String(exp.PLAQUE || "")) { updateExpCol(exp.ID, COL_EXP.PLAQUE, plaque); changes.push("plaque " + (exp.PLAQUE || "—") + " → " + (plaque || "—")); }
+  if (chauffeur !== undefined && chauffeur !== String(exp.CHAUFFEUR || "")) { updateExpCol(exp.ID, COL_EXP.CHAUFFEUR, chauffeur); changes.push("chauffeur " + (exp.CHAUFFEUR || "—") + " → " + (chauffeur || "—")); }
+  if (tel !== undefined && tel !== String(exp.TEL_CHAUFFEUR || "")) { updateExpCol(exp.ID, COL_EXP.TEL_CHAUFFEUR, tel); changes.push("téléphone modifié"); }
+  if (!changes.length) throw new Error("Rien n'a changé");
+  addEvenement(exp.ID, "ENTREE_CORRIGEE", u.EMAIL, u.NOM, now(), "Entrée corrigée : " + changes.join(", ") + " — motif : " + motif);
+  return { ok: true, modifications: changes };
 }
 
 // ─── ADMINISTRATION — NETTOYAGE DES DONNÉES ───────────────────────────────────
@@ -3154,7 +3399,7 @@ function getKpi(params) {
     const acteurKpi = sheetToObjects(getSheet("UTILISATEURS"), COL_USR).find(function(u) {
       return u.ACTIF && u.EMAIL && u.EMAIL.toLowerCase() === String(params.acteurEmail).toLowerCase();
     });
-    if (acteurKpi && (acteurKpi.ROLE === "controleur" || acteurKpi.ROLE === "responsable")) {
+    if (acteurKpi && (acteurKpi.ROLE === "controleur" || acteurKpi.ROLE === "coordinateur" || acteurKpi.ROLE === "responsable")) {
       if (acteurKpi.SITE) site = acteurKpi.SITE;
       if (acteurKpi.ROLE === "responsable" && ncCategorieZone_(acteurKpi.ZONE) !== "autre") magasin = acteurKpi.ZONE;
     }

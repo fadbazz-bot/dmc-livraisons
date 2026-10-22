@@ -6,6 +6,7 @@
 export type Role =
   | "admin"
   | "controleur"
+  | "coordinateur"  // Aide les agents terrain et corrige leurs erreurs, sans droits admin
   | "responsable"   // Responsable magasin (zone : Showroom, Parc Acier, Dépôt)
   | "chef_poste"    // Garde à l'entrée du site (login par PIN)
   | "agent_showroom" // Agent sécurité showroom — autorise l'entrée client (login par PIN)

@@ -11,6 +11,7 @@ import { EntreeShowroomModal } from "@/components/modals/EntreeShowroomModal";
 import { SortieShowroomModal } from "@/components/modals/SortieShowroomModal";
 import { formatRelative } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { ConfirmerClientModal } from "@/components/modals/ConfirmerClientModal";
 
 type Section = "entrer" | "sortir";
 
@@ -35,6 +36,7 @@ export default function AgentShowroomPage() {
   const { user } = useAuth();
   const [section, setSection] = useState<Section>("entrer");
   const [entreeExp, setEntreeExp] = useState<Expedition | null>(null);
+  const [aConfirmer, setAConfirmer] = useState<Expedition | null>(null);
   const [sortieExp, setSortieExp] = useState<Expedition | null>(null);
 
   const { data: exps = [], isLoading, refetch, isFetching, error } = useQuery({
@@ -115,7 +117,7 @@ export default function AgentShowroomPage() {
             list={aEntrer}
             actionLabel="Autoriser"
             actionIcon={<DoorOpen className="h-4 w-4" />}
-            onAction={(e) => setEntreeExp(e)}
+            onAction={(e) => setAConfirmer(e)}
             empty="Aucun client en attente d'entrée."
           />
         ) : (
@@ -130,6 +132,14 @@ export default function AgentShowroomPage() {
       </div>
 
       {/* Modals */}
+      {aConfirmer && (
+        <ConfirmerClientModal
+          exp={aConfirmer}
+          voisins={aEntrer}
+          onClose={() => setAConfirmer(null)}
+          onConfirm={() => { setEntreeExp(aConfirmer); setAConfirmer(null); }}
+        />
+      )}
       {entreeExp && (
         <EntreeShowroomModal exp={entreeExp} open onClose={() => setEntreeExp(null)} />
       )}

@@ -26,6 +26,7 @@ const ROLES: { value: Role; label: string; description: string }[] = [
   { value: "chef_poste",   label: "Chef de poste", description: "Poste de garde — connexion par PIN" },
   { value: "agent_showroom", label: "Agent showroom", description: "Autorise l'entrée client au showroom — connexion par PIN" },
   { value: "controleur",   label: "Contrôleur",    description: "Valide les justificatifs de retard" },
+  { value: "coordinateur", label: "Coordinateur", description: "Aide les agents et corrige leurs erreurs (annuler une validation, rattacher une plaque…) sans droits admin" },
   { value: "chef_flotte",  label: "Chef Flotte",   description: "Gère les chauffeurs et la flotte interne (vue Flotte interne uniquement)" },
 ];
 
@@ -446,7 +447,7 @@ function UserFormModal({
         </div>
 
         {/* Champs conditionnels selon le rôle */}
-        {(role === "responsable" || role === "chef_poste" || role === "agent_showroom" || role === "controleur") && (
+        {(role === "responsable" || role === "chef_poste" || role === "agent_showroom" || role === "controleur" || role === "coordinateur") && (
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
               <label htmlFor="site" className="label">Site</label>

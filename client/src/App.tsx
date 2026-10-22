@@ -9,6 +9,7 @@ import AgentShowroomPage from "@/pages/AgentShowroom";
 import ResponsablePage from "@/pages/Responsable";
 import NouvelleDemandePage from "@/pages/NouvelleDemande";
 import UtilisateursPage from "@/pages/Utilisateurs";
+import CoordinationPage from "@/pages/Coordination";
 import NonConformitesMagasinPage from "@/pages/NonConformitesMagasin";
 import ConfigurationPage from "@/pages/Configuration";
 import DonneesAdminPage from "@/pages/DonneesAdmin";
@@ -50,6 +51,7 @@ function AppRouter() {
       <Route path="/poste-garde" component={PosteGardePage} />
       <Route path="/agent-showroom" component={AgentShowroomPage} />
       <Route path="/responsable" component={ResponsablePage} />
+      <Route path="/coordination" component={CoordinationPage} />
       <Route path="/non-conformites" component={NonConformitesMagasinPage} />
       {/* Anciennes adresses (Justificatifs / Contrôle) : regroupées dans Non-conformités */}
       <Route path="/justificatifs" component={() => <Redirect to="/non-conformites" />} />
