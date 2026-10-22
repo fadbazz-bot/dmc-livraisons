@@ -498,9 +498,18 @@ export const utils = {
 
 // ─── Module flotte interne ───────────────────────────────────────────────────
 
+/** Prestataire / livreur extérieur à DMC : choix proposé à l'attribution (pas de fiche dans les référentiels). */
+export const CHAUFFEUR_EXTERNE_ID = "EXTERNE";
+export const CHAUFFEUR_EXTERNE: ChauffeurFlotte = {
+  id: CHAUFFEUR_EXTERNE_ID, nom: "Chauffeur / Livreur Externe", plaque: "", site: "", telephone: "", actif: true,
+};
+
 export const flotteChauffeurs = {
+  /** `actifsOnly` = liste destinée à l'attribution : on y ajoute le choix « Chauffeur / Livreur Externe ». */
   list: (actifsOnly = false) =>
-    apiGet<ChauffeurFlotte[]>("getChauffeursFlotte", actifsOnly ? { actifsOnly: "true" } : {}),
+    apiGet<ChauffeurFlotte[]>("getChauffeursFlotte", actifsOnly ? { actifsOnly: "true" } : {}).then((l) =>
+      actifsOnly && !l.some((c) => c.id === CHAUFFEUR_EXTERNE_ID) ? [...l, CHAUFFEUR_EXTERNE] : l,
+    ),
   add: (input: { nom: string; plaque: string; site?: string; telephone?: string }) =>
     apiPost<{ ok: true }>("addChauffeurFlotte", input),
   update: (input: { id: string; nom?: string; plaque?: string; site?: string; telephone?: string; actif?: boolean }) =>

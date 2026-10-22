@@ -4444,6 +4444,11 @@ function clearFlotteDemo() {
 
 // ── Chauffeurs ─────────────────────────────────────────────────────────────────
 
+// Chauffeur « virtuel » : livraison confiée à un prestataire / livreur extérieur à DMC.
+// Pas de ligne dans FLOTTE_CHAUFFEURS : la plaque est saisie librement à chaque attribution.
+const CHAUFFEUR_EXTERNE_ID = "EXTERNE";
+const CHAUFFEUR_EXTERNE_NOM = "Chauffeur / Livreur Externe";
+
 function getChauffeursFlotte(params) {
   const sh = getSheet("FLOTTE_CHAUFFEURS");
   let list = sheetToObjects(sh, COL_FLOTTE_CHAUFFEURS);
@@ -4840,7 +4845,9 @@ function assignChauffeurLivraison(params) {
       shSuivi.getRange(row, C.CHAUFFEUR_ID).setValue("");
       shSuivi.getRange(row, C.PLAQUE).setValue("");
     } else {
-      const ch = sheetToObjects(getSheet("FLOTTE_CHAUFFEURS"), COL_FLOTTE_CHAUFFEURS).find(c => c.ID === chauffeurId);
+      const ch = chauffeurId === CHAUFFEUR_EXTERNE_ID
+        ? { ID: CHAUFFEUR_EXTERNE_ID, NOM: CHAUFFEUR_EXTERNE_NOM, PLAQUE: "" }
+        : sheetToObjects(getSheet("FLOTTE_CHAUFFEURS"), COL_FLOTTE_CHAUFFEURS).find(c => c.ID === chauffeurId);
       if (!ch) throw new Error("Chauffeur introuvable");
       nom = ch.NOM || "";
       // Véhicule : celui demandé, sinon la plaque habituelle du chauffeur (modifiable ensuite)

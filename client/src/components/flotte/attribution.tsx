@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Lock, Check, Truck, User } from "lucide-react";
-import { api } from "@/api/appsScript";
+import { api, CHAUFFEUR_EXTERNE_ID } from "@/api/appsScript";
 import type { ChauffeurFlotte, LivraisonFlotte } from "@/types/domain";
 import { Modal } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
@@ -106,34 +106,72 @@ export function SelectChauffeur({
   );
 }
 
+const AUTRE = "__autre__";
+
+/**
+ * Véhicule : liste déroulante de TOUTES les immatriculations connues (celle du chauffeur choisi est
+ * sélectionnée d'office, mais on peut en prendre une autre). « Autre / saisir… » permet de taper
+ * une plaque absente de la liste (véhicule loué, livreur externe).
+ */
 export function ChampVehicule({
-  value, plaques, disabled, onChange, onCommit, id, className,
+  value, plaques, chauffeurs = [], disabled, saisieLibre, onChange, onCommit, className,
 }: {
-  value: string; plaques: string[]; disabled?: boolean; onChange: (v: string) => void; onCommit: (v: string) => void; id: string; className?: string;
+  value: string; plaques: string[]; chauffeurs?: ChauffeurFlotte[]; disabled?: boolean;
+  /** Ouvre directement la saisie libre (ex. livreur externe sans plaque) */
+  saisieLibre?: boolean;
+  onChange: (v: string) => void; onCommit: (v: string) => void; id?: string; className?: string;
 }) {
-  const listId = `plaques-${id}`;
+  const [libre, setLibre] = useState(false);
+  useEffect(() => { if (saisieLibre && !value) setLibre(true); }, [saisieLibre, value]);
+
+  const options = useMemo(() => {
+    const s = new Set(plaques);
+    if (value) s.add(value);
+    return Array.from(s).sort();
+  }, [plaques, value]);
+  const habituel = (p: string) => chauffeurs.find((c) => (c.plaque || "").trim().toUpperCase() === p)?.nom;
+
+  const icone = <Truck className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />;
+  if (libre) {
+    return (
+      <div className="relative">
+        {icone}
+        <input
+          aria-label="Véhicule (immatriculation)"
+          autoFocus
+          value={value}
+          disabled={disabled}
+          placeholder="Taper l'immatriculation"
+          autoComplete="off"
+          onChange={(e) => onChange(e.target.value.toUpperCase())}
+          onBlur={(e) => { onCommit(e.target.value); if (e.target.value.trim()) setLibre(false); }}
+          onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setLibre(false); }}
+          className={cn("input py-1 pl-7 pr-2 text-xs w-full uppercase tracking-wide", disabled && "bg-slate-50", className)}
+        />
+      </div>
+    );
+  }
   return (
     <div className="relative">
-      <Truck className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-      <input
+      {icone}
+      <select
         aria-label="Véhicule (immatriculation)"
-        list={listId}
         value={value}
         disabled={disabled}
-        placeholder="Véhicule"
-        autoComplete="off"
         onChange={(e) => {
-          const v = e.target.value.toUpperCase();
-          onChange(v);
-          if (plaques.includes(v)) onCommit(v); // choix dans la liste : enregistré tout de suite
+          if (e.target.value === AUTRE) { onChange(""); setLibre(true); return; }
+          onChange(e.target.value);
+          onCommit(e.target.value);
         }}
-        onBlur={(e) => onCommit(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-        className={cn("input py-1 pl-7 pr-2 text-xs w-full uppercase tracking-wide", disabled && "bg-slate-50", className)}
-      />
-      <datalist id={listId}>
-        {plaques.map((p) => <option key={p} value={p} />)}
-      </datalist>
+        className={cn("input py-1 pl-7 pr-2 text-xs w-full tracking-wide", !value && "text-slate-400", disabled && "bg-slate-50", className)}
+      >
+        <option value="">Véhicule…</option>
+        {options.map((p) => {
+          const qui = habituel(p);
+          return <option key={p} value={p}>{qui ? `${p} — ${qui}` : p}</option>;
+        })}
+        <option value={AUTRE}>＋ Autre / saisir…</option>
+      </select>
     </div>
   );
 }
@@ -208,8 +246,8 @@ export function ModalAttribution({
         </div>
         <div>
           <label className="label">Véhicule</label>
-          <ChampVehicule id={`modal-${l.id}`} value={plaque} plaques={plaques} onChange={setPlaque} onCommit={setPlaque} className="py-2 text-sm" />
-          <p className="mt-1 text-xs text-slate-500">Pré-rempli avec la plaque habituelle du chauffeur — tu peux la changer.</p>
+          <ChampVehicule value={plaque} plaques={plaques} chauffeurs={chauffeurs} saisieLibre={chauffeurId === CHAUFFEUR_EXTERNE_ID} onChange={setPlaque} onCommit={setPlaque} className="py-2 text-sm" />
+          <p className="mt-1 text-xs text-slate-500">Pré-rempli avec la plaque habituelle du chauffeur — choisis-en une autre dans la liste si besoin.</p>
         </div>
       </div>
     </Modal>

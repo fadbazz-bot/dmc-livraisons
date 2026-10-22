@@ -5,6 +5,7 @@ import { api } from "@/api/appsScript";
 import type { ChauffeurFlotte, EtatLivraison, LivraisonFlotte, PrepareVeille, TypeMouvement } from "@/types/domain";
 import { useToast } from "@/components/Toast";
 import { UrgentBadge } from "@/components/UrgentBadge";
+import { CHAUFFEUR_EXTERNE_ID } from "@/api/appsScript";
 import { BoutonValider, ChampVehicule, SelectChauffeur, useAttribution } from "@/components/flotte/attribution";
 import { cn } from "@/lib/cn";
 
@@ -260,6 +261,8 @@ function Ligne({
             id={l.id}
             value={att.plaque}
             plaques={plaques}
+            chauffeurs={chauffeurs}
+            saisieLibre={att.chauffeurId === CHAUFFEUR_EXTERNE_ID}
             disabled={att.validee}
             onChange={att.setPlaque}
             onCommit={att.changePlaque}

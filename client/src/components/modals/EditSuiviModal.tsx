@@ -169,7 +169,7 @@ export function EditSuiviModal({ livraison, open, onClose }: Props) {
             <option value="">— Non assigné —</option>
             {chauffeurs.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.nom} · {c.plaque}
+                {c.plaque ? `${c.nom} · ${c.plaque}` : c.nom}
               </option>
             ))}
           </select>
