@@ -291,6 +291,7 @@ export const referentiels = {
 
   modifierUser: (input: {
     id: string;
+    email?: string;
     nom?: string;
     role?: string;
     site?: string;

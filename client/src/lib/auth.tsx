@@ -20,7 +20,10 @@ function readPersistedSession(): AuthSession | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as AuthSession;
+    const s = JSON.parse(raw) as AuthSession;
+    // Le rôle « contrôleur » a été fusionné dans « coordinateur » (anciennes sessions déjà ouvertes)
+    if ((s.role as string) === "controleur") s.role = "coordinateur";
+    return s;
   } catch {
     return null;
   }

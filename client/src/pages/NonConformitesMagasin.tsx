@@ -85,7 +85,7 @@ function exporterCsv(liste: NonConformite[]) {
 export default function NonConformitesMagasinPage() {
   const { user } = useAuth();
   const email = user?.email ?? "";
-  const estControleur = user?.role === "controleur" || user?.role === "admin";
+  const estControleur = user?.role === "coordinateur" || user?.role === "admin"; // droit de décision
   const estCoordinateur = user?.role === "coordinateur";
   const autorise = estControleur || estCoordinateur || user?.role === "responsable";
 
@@ -145,7 +145,7 @@ export default function NonConformitesMagasinPage() {
 
   const onglets: (Vue & { key: Onglet })[] = [
     { key: "expliquer", label: "À expliquer", n: parOnglet.expliquer.length, alerte: parOnglet.expliquer.some((x) => x.enRetardJustif) },
-    { key: "decider", label: estControleur ? "À décider" : "En attente contrôleur", n: parOnglet.decider.length },
+    { key: "decider", label: estControleur ? "À décider" : "En attente coordinateur", n: parOnglet.decider.length },
     { key: "actions", label: "Actions correctives", n: parOnglet.actions.length, alerte: parOnglet.actions.some((x) => x.enRetardAction) },
     { key: "cloturees", label: "Clôturées", n: parOnglet.cloturees.length },
     ...(estControleur || estCoordinateur ? [{ key: "suivi" as Onglet, label: "Suivi chiffré" }] : []),
@@ -157,7 +157,7 @@ export default function NonConformitesMagasinPage() {
       <div className="h-full flex items-center justify-center p-6">
         <div className="card p-8 text-center max-w-md">
           <h2 className="text-lg font-semibold text-slate-900 mb-2">Accès réservé</h2>
-          <p className="text-sm text-slate-500">Cette page est réservée aux responsables, aux coordinateurs et aux contrôleurs.</p>
+          <p className="text-sm text-slate-500">Cette page est réservée aux responsables et aux coordinateurs.</p>
         </div>
       </div>
     );
@@ -259,7 +259,7 @@ export default function NonConformitesMagasinPage() {
           <div className="card p-10 text-center text-sm text-slate-500">
             <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-emerald-500" />
             {onglet === "expliquer" && "Aucune non-conformité à expliquer."}
-            {onglet === "decider" && (estControleur ? "Aucune explication en attente de décision." : "Rien n'attend le contrôleur.")}
+            {onglet === "decider" && (estControleur ? "Aucune explication en attente de décision." : "Rien n'attend le coordinateur.")}
             {onglet === "actions" && "Aucune action corrective en cours."}
             {onglet === "cloturees" && "Aucune non-conformité clôturée sur la période."}
           </div>
@@ -567,7 +567,7 @@ function NouveauConstat({ onClose }: { onClose: () => void }) {
   const { user } = useAuth();
   const toast = useToast();
   const qc = useQueryClient();
-  const sitesDispo = user?.site && (user.role === "controleur" || user.role === "coordinateur") ? [user.site] : ["Dakar", "Diamniadio"];
+  const sitesDispo = user?.site && user.role === "coordinateur" ? [user.site] : ["Dakar", "Diamniadio"];
   const [site, setSite] = useState(sitesDispo[0]);
   const [zone, setZone] = useState("");
   const [numCmd, setNumCmd] = useState("");

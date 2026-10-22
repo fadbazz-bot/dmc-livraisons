@@ -3,7 +3,7 @@ import type { MagasinZone } from "@/types/magasins";
 /**
  * Portée des données selon le rôle : ce que chacun a le droit de filtrer.
  *  - admin, commercial, chef de flotte : tous les sites, tous les magasins
- *  - contrôleur, coordinateur : son site (tous les magasins de ce site)
+ *  - coordinateur : son site (tous les magasins de ce site)
  *  - responsable : son site et son type de magasin (parc, dépôt, showroom, SAV)
  */
 
@@ -32,7 +32,7 @@ export interface Portee {
 
 export function porteeDe(user: { role?: string; site?: string; zone?: string } | null | undefined): Portee {
   if (!user) return { siteFixe: null, zoneFixe: null };
-  if (user.role === "controleur" || user.role === "coordinateur") return { siteFixe: user.site || null, zoneFixe: null };
+  if (user.role === "coordinateur") return { siteFixe: user.site || null, zoneFixe: null };
   if (user.role === "responsable") {
     const cat = categorieZone(user.zone);
     const zoneFixe = ZONES_MAGASIN.find((z) => categorieZone(z) === cat) ?? null;

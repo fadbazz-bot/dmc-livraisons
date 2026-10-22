@@ -103,7 +103,7 @@ export default function FileCommandesPage() {
   const peutVoirCode = !!user && (user.role === "admin" || user.role === "commercial");
   const estCommercial = user?.role === "commercial";
 
-  const cloisonne = user?.role === "controleur" || user?.role === "responsable";
+  const cloisonne = user?.role === "coordinateur" || user?.role === "responsable";
   const cleCache = cloisonne ? `expeditions-file-${user?.email}` : "expeditions";
 
   const {
@@ -114,7 +114,7 @@ export default function FileCommandesPage() {
     isFetching,
     dataUpdatedAt,
   } = useQuery({
-    // Contrôleur / responsable : le serveur cloisonne selon le compte (site, magasin)
+    // Coordinateur / responsable : le serveur cloisonne selon le compte (site, magasin)
     queryKey: ["expeditions", "file", cloisonne ? user?.email : "tous"],
     queryFn: async () => {
       const res = await api.expeditions.list(cloisonne ? { acteurEmail: user?.email } : undefined);

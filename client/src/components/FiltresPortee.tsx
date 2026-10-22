@@ -68,7 +68,7 @@ export function Verrou({ texte }: { texte: string }) {
 }
 
 /**
- * Filtres site + magasin, limités par les droits : un contrôleur ou un responsable
+ * Filtres site + magasin, limités par les droits : un coordinateur ou un responsable
  * voit son site (verrouillé) ; un responsable voit en plus son type de magasin.
  */
 export function SiteMagasinSelect({

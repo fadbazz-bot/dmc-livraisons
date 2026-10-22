@@ -484,7 +484,7 @@ function initSheets() {
     // Comptes réels DMC
     const users = [
       [genId(),"fadell.bazzouni@dmcsen.com","Fadel Bazzouni","admin","","",true],
-      [genId(),"Souleymane.diallo@dmcsen.com","Souleymane Diallo","controleur","Dakar","",true],
+      [genId(),"Souleymane.diallo@dmcsen.com","Souleymane Diallo","coordinateur","Dakar","",true],
       [genId(),"comptoir.diam@dmcsen.com","Resp. Showroom Diam","responsable","Diamniadio","Showroom",true],
       [genId(),"livraison.parc.diamniadio@dmcsen.com","Chef Parc Diamniadio","responsable","Diamniadio","Parc",true],
       [genId(),"depot.diamniadio@dmcsen.com","Resp. Dépôt Diamniadio","responsable","Diamniadio","Dépôt",true],
@@ -615,12 +615,41 @@ function calculerDateLivraisonPrevue(timestampIso) {
 
 // ─── AUTH ──────────────────────────────────────────────────────────────────────
 
+/**
+ * Remise en ordre de la feuille UTILISATEURS (idempotente) :
+ *   - le rôle « controleur » n'existe plus : fusionné dans « coordinateur » ;
+ *   - une ligne sans ID (ajoutée à la main dans le Sheet) reçoit un ID, sinon elle est
+ *     impossible à modifier depuis l'application (« [updateUser] ID requis »).
+ * `force` = true : ignore le drapeau de cache (page Utilisateurs). Sinon au plus 1 passage / 10 min.
+ */
+function normaliserUtilisateurs_(force) {
+  const cache = CacheService.getScriptCache();
+  if (!force && cache.get("USR_NORMALISES")) return;
+  const sh = getSheet("UTILISATEURS");
+  const last = sh.getLastRow();
+  if (last >= 2) {
+    const nb = last - 1;
+    const roles = sh.getRange(2, COL_USR.ROLE, nb, 1).getValues();
+    const ids = sh.getRange(2, COL_USR.ID, nb, 1).getValues();
+    const emails = sh.getRange(2, COL_USR.EMAIL, nb, 1).getValues();
+    let majRoles = false, majIds = false;
+    for (let i = 0; i < nb; i++) {
+      if (String(roles[i][0]).trim().toLowerCase() === "controleur") { roles[i][0] = "coordinateur"; majRoles = true; }
+      if (!String(ids[i][0] || "").trim() && String(emails[i][0] || "").trim()) { ids[i][0] = genId(); majIds = true; }
+    }
+    if (majRoles) sh.getRange(2, COL_USR.ROLE, nb, 1).setValues(roles);
+    if (majIds) sh.getRange(2, COL_USR.ID, nb, 1).setValues(ids);
+  }
+  cache.put("USR_NORMALISES", "1", 600);
+}
+
 function login(params) {
   const email = params.email;
   if (!email) throw new Error("Email requis");
   if (!email.toLowerCase().endsWith("@dmcsen.com")) {
     return { error: "Seuls les comptes @dmcsen.com sont autorisés" };
   }
+  normaliserUtilisateurs_(false);
   const sh = getSheet("UTILISATEURS");
   const users = sheetToObjects(sh, COL_USR);
   const user = users.find(u => u.EMAIL.toLowerCase() === email.toLowerCase() && u.ACTIF);
@@ -662,6 +691,7 @@ function googleLogin(params) {
   }
 
   // Vérifier que l'email est dans la liste des utilisateurs autorisés
+  normaliserUtilisateurs_(false);
   var sh = getSheet("UTILISATEURS");
   var users = sheetToObjects(sh, COL_USR);
   var user = users.find(function(u) { return u.EMAIL.toLowerCase() === email && u.ACTIF; });
@@ -724,6 +754,7 @@ function getUtilisateurs(params) {
  * Tous les utilisateurs (actifs et inactifs) — admin only
  */
 function getAllUtilisateurs() {
+  normaliserUtilisateurs_(true);
   const sh = getSheet("UTILISATEURS");
   const users = sheetToObjects(sh, COL_USR);
   return users.map(u => ({
@@ -740,7 +771,8 @@ function getAllUtilisateurs() {
  * Ajouter un utilisateur — admin only
  */
 function addUser(params) {
-  const { email, nom, role, site, zone, pin, superviseurFlotte } = params;
+  const { email, nom, site, zone, pin, superviseurFlotte } = params;
+  const role = params.role === "controleur" ? "coordinateur" : params.role;
   if (!email || !nom || !role) throw new Error("Email, nom et rôle requis");
   if (!email.toLowerCase().endsWith("@dmcsen.com")) throw new Error("Seuls les emails @dmcsen.com sont autorisés");
   const sh = getSheet("UTILISATEURS");
@@ -763,10 +795,14 @@ function addUser(params) {
  * Modifier un utilisateur — admin only
  */
 function updateUser(params) {
-  const { id, nom, role, site, zone, actif, pin, superviseurFlotte } = params;
-  if (!id) throw new Error("ID requis");
+  const { id, email, nom, site, zone, actif, pin, superviseurFlotte } = params;
+  // « controleur » n'existe plus : c'est le coordinateur
+  const role = params.role === "controleur" ? "coordinateur" : params.role;
+  if (!id && !email) throw new Error("ID requis");
+  normaliserUtilisateurs_(true); // donne un ID aux lignes qui n'en ont pas
   const sh = getSheet("UTILISATEURS");
-  const row = findRow(sh, COL_USR.ID, id);
+  let row = id ? findRow(sh, COL_USR.ID, id) : -1;
+  if (row < 0 && email) row = findRow(sh, COL_USR.EMAIL, String(email).trim());
   if (row < 0) throw new Error("Utilisateur non trouvé");
   if (nom !== undefined)  sh.getRange(row, COL_USR.NOM).setValue(nom);
   if (role !== undefined) sh.getRange(row, COL_USR.ROLE).setValue(role);
@@ -1890,7 +1926,7 @@ function ncSyncRetardExp_(expId, motifs, commentaire, email) {
  */
 function decisionNonConformite(params) {
   const u = ncUser_(params.acteurEmail);
-  if (["controleur", "admin"].indexOf(u.ROLE) === -1) throw new Error("Réservé au contrôleur");
+  if (["coordinateur", "controleur", "admin"].indexOf(u.ROLE) === -1) throw new Error("Réservé au coordinateur");
   const decision = String(params.decision || "");
   if (["acceptee", "contestee", "confirmee"].indexOf(decision) === -1) throw new Error("Décision invalide");
   const comm = String(params.commentaire || "").trim();
@@ -1982,7 +2018,7 @@ function terminerActionNonConformite(params) {
 /** Constat manuel (visite terrain). La photo éventuelle est stockée dans MEDIAS sous « NC-<id> ». */
 function creerNonConformite(params) {
   const u = ncUser_(params.acteurEmail);
-  if (["controleur", "admin"].indexOf(u.ROLE) === -1) throw new Error("Réservé au contrôleur");
+  if (["coordinateur", "controleur", "admin"].indexOf(u.ROLE) === -1) throw new Error("Réservé au coordinateur");
   const detail = String(params.detail || "").trim();
   if (detail.length < 5) throw new Error("Décris le constat");
   const site = String(params.site || u.SITE || "").trim();

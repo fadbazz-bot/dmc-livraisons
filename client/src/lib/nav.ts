@@ -60,14 +60,14 @@ export const FLOTTE_SOUS_MENU: NavChild[] = [
 ];
 
 export const NAV: NavItem[] = [
-  { to: "/file",              label: "File des expéditions", short: "File",       icon: LayoutList,     group: "commandes", roles: ["admin", "commercial", "responsable", "controleur", "coordinateur"] },
+  { to: "/file",              label: "File des expéditions", short: "File",       icon: LayoutList,     group: "commandes", roles: ["admin", "commercial", "responsable", "coordinateur"] },
   { to: "/nouvelle-demande",  label: "Nouvelle demande",     short: "Nouveau",    icon: PackagePlus,    group: "commandes", roles: ["commercial", "admin"] },
   { to: "/poste-garde",       label: "Poste de garde",       short: "Garde",      icon: ShieldCheck,    group: "terrain",   roles: ["chef_poste", "coordinateur", "admin"] },
   { to: "/agent-showroom",    label: "Agent showroom",       short: "Showroom",   icon: DoorOpen,       group: "terrain",   roles: ["agent_showroom", "coordinateur", "admin"] },
   { to: "/responsable",       label: "Préparation",          short: "Prépa",      icon: Wrench,         group: "terrain",   roles: ["responsable", "coordinateur", "admin"] },
   { to: "/coordination",      label: "Coordination",         short: "Coordo",     icon: LifeBuoy,       group: "terrain",   roles: ["coordinateur", "admin"] },
-  { to: "/non-conformites",   label: "Non-conformités",      short: "Qualité",    icon: ClipboardCheck, group: "terrain",   roles: ["responsable", "controleur", "coordinateur", "admin"] },
-  { to: "/dashboard",         label: "Tableau de bord",      short: "KPI",        icon: BarChart3,      group: "pilotage",  roles: ["admin", "commercial", "responsable", "controleur", "coordinateur"] },
+  { to: "/non-conformites",   label: "Non-conformités",      short: "Qualité",    icon: ClipboardCheck, group: "terrain",   roles: ["responsable", "coordinateur", "admin"] },
+  { to: "/dashboard",         label: "Tableau de bord",      short: "KPI",        icon: BarChart3,      group: "pilotage",  roles: ["admin", "commercial", "responsable", "coordinateur"] },
   { to: "/flotte/aujourdhui", label: "Flotte interne",       short: "Flotte",     icon: Truck,          group: "pilotage",  flagSuperviseur: true, prefix: "/flotte", children: FLOTTE_SOUS_MENU },
   { to: "/utilisateurs",      label: "Utilisateurs",         short: "Équipe",     icon: Users,          group: "admin",     roles: ["admin"] },
   { to: "/donnees",           label: "Données",              short: "Données",    icon: Database,       group: "admin",     roles: ["admin"] },
@@ -87,7 +87,6 @@ export const ROLE_LABELS: Record<string, string> = {
   responsable: "Responsable magasin",
   chef_poste: "Poste de garde",
   agent_showroom: "Agent showroom",
-  controleur: "Contrôleur",
   coordinateur: "Coordinateur",
   chef_flotte: "Responsable chauffeurs",
 };
@@ -124,7 +123,6 @@ export function routeAccueil(role: string): string {
     case "agent_showroom": return "/agent-showroom";
     case "chef_poste":     return "/poste-garde";
     case "responsable":    return "/responsable";
-    case "controleur":     return "/non-conformites";
     case "coordinateur":   return "/coordination";
     default:               return "/file";
   }

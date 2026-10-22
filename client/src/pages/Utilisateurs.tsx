@@ -25,8 +25,7 @@ const ROLES: { value: Role; label: string; description: string }[] = [
   { value: "responsable",  label: "Responsable",   description: "Saisit le code de livraison côté magasin" },
   { value: "chef_poste",   label: "Chef de poste", description: "Poste de garde — connexion par PIN" },
   { value: "agent_showroom", label: "Agent showroom", description: "Autorise l'entrée client au showroom — connexion par PIN" },
-  { value: "controleur",   label: "Contrôleur",    description: "Valide les justificatifs de retard" },
-  { value: "coordinateur", label: "Coordinateur", description: "Aide les agents et corrige leurs erreurs (annuler une validation, rattacher une plaque…) sans droits admin" },
+  { value: "coordinateur", label: "Coordinateur", description: "Coordonne les sites : aide les agents, corrige leurs erreurs (annuler une validation, rattacher une plaque…), décide sur les non-conformités et valide les justificatifs. Sans droits admin." },
   { value: "chef_flotte",  label: "Chef Flotte",   description: "Gère les chauffeurs et la flotte interne (vue Flotte interne uniquement)" },
 ];
 
@@ -300,7 +299,7 @@ function UserFormModal({
   const qc = useQueryClient();
   const [email, setEmail] = useState(existing?.email ?? "");
   const [nom, setNom] = useState(existing?.nom ?? "");
-  const [role, setRole] = useState<Role>((existing?.role as Role) ?? "commercial");
+  const [role, setRole] = useState<Role>((existing?.role as string) === "controleur" ? "coordinateur" : ((existing?.role as Role) ?? "commercial"));
   const [site, setSite] = useState(existing?.site ?? "");
   const [zone, setZone] = useState(existing?.zone ?? "");
   const [pin, setPin] = useState(existing?.pin ?? "");
@@ -313,6 +312,7 @@ function UserFormModal({
       if (isEdit) {
         return api.referentiels.modifierUser({
           id: existing.id,
+          email: existing.email, // secours si la ligne du Sheet n'avait pas d'ID
           nom: nom.trim(),
           role,
           site: site || undefined,
@@ -447,7 +447,7 @@ function UserFormModal({
         </div>
 
         {/* Champs conditionnels selon le rôle */}
-        {(role === "responsable" || role === "chef_poste" || role === "agent_showroom" || role === "controleur" || role === "coordinateur") && (
+        {(role === "responsable" || role === "chef_poste" || role === "agent_showroom" || role === "coordinateur") && (
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
               <label htmlFor="site" className="label">Site</label>
