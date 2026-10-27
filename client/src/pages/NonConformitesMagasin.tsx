@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle, BarChart3, CheckCircle2, Clock, Download, Flag, Plus, RefreshCw, Search, Wrench, XCircle,
+  AlertTriangle, ArrowRight, BarChart3, CheckCircle2, ChevronDown, Download, Flag, Plus, RefreshCw, Search, Wrench,
 } from "lucide-react";
 import {
   api,
@@ -20,29 +20,64 @@ import { formatDateTime, formatRelative } from "@/lib/format";
 import { cn, includesLower } from "@/lib/cn";
 import { useVues, type Vue } from "@/lib/vues";
 
-type Onglet = "expliquer" | "decider" | "actions" | "cloturees" | "suivi";
+/** Les vues se répartissent selon « qui doit agir » : c'est la question que tout le monde se pose. */
+type Onglet = "atraiter" | "autres" | "cloturees" | "chiffres";
+
+type Acteur = "responsable" | "coordinateur";
 
 const STATUT_LABEL: Record<NcStatut, string> = {
   ouverte: "À expliquer",
-  contestee: "Explication contestée",
-  expliquee: "En attente du contrôleur",
-  action_en_cours: "Action corrective en cours",
+  contestee: "À expliquer",
+  expliquee: "En attente de décision",
+  action_en_cours: "Action corrective",
   cloturee: "Clôturée",
 };
 
 const STATUT_BADGE: Record<NcStatut, string> = {
   ouverte: "badge-danger",
-  contestee: "badge-warn",
+  contestee: "badge-danger",
   expliquee: "badge-info",
   action_en_cours: "badge-progress",
   cloturee: "badge-success",
 };
 
-function aireOnglet(n: NonConformite): Onglet {
-  if (n.statut === "ouverte" || n.statut === "contestee") return "expliquer";
-  if (n.statut === "expliquee") return "decider";
-  if (n.statut === "action_en_cours") return "actions";
-  return "cloturees";
+/** Qui doit agir maintenant ? (null = terminé) */
+function acteurDe(n: NonConformite): Acteur | null {
+  if (n.statut === "ouverte" || n.statut === "contestee" || n.statut === "action_en_cours") return "responsable";
+  if (n.statut === "expliquee") return "coordinateur";
+  return null;
+}
+
+const ACTEUR_LABEL: Record<Acteur, string> = { responsable: "Le responsable du magasin", coordinateur: "Le coordinateur" };
+
+/** Phrase unique « prochaine étape » : qui fait quoi, et pour quand. */
+function prochaineEtape(n: NonConformite): string {
+  switch (n.statut) {
+    case "ouverte":
+    case "contestee":
+      return `Le responsable du magasin doit expliquer — ${delaiTexte(n.limiteJustif)}`;
+    case "expliquee":
+      return "Le coordinateur doit trancher : accepter l'explication ou confirmer la non-conformité";
+    case "action_en_cours":
+      return `Le responsable doit réaliser l'action corrective — échéance ${n.actionEcheance ?? "?"}`;
+    default:
+      return n.decision === "acceptee" ? "Explication acceptée" : n.action ? "Action corrective réalisée" : "Terminée";
+  }
+}
+
+/**
+ * Dans quelle vue range-t-on cette non-conformité pour CET utilisateur ?
+ *  - atraiter : c'est à moi d'agir (le coordinateur y retrouve aussi les retards à relancer)
+ *  - autres   : quelqu'un d'autre doit agir
+ *  - cloturees: terminé
+ */
+function vueDe(n: NonConformite, role: string): Exclude<Onglet, "chiffres"> {
+  const acteur = acteurDe(n);
+  if (!acteur) return "cloturees";
+  if (role === "responsable") return acteur === "responsable" ? "atraiter" : "autres";
+  // coordinateur / admin : décide, et relance quand le responsable est en retard
+  if (acteur === "coordinateur") return "atraiter";
+  return n.enRetardJustif || n.enRetardAction ? "atraiter" : "autres";
 }
 
 function isoJour(d: Date) {
@@ -88,6 +123,7 @@ export default function NonConformitesMagasinPage() {
   const estControleur = user?.role === "coordinateur" || user?.role === "admin"; // droit de décision
   const estCoordinateur = user?.role === "coordinateur";
   const autorise = estControleur || estCoordinateur || user?.role === "responsable";
+  const role = user?.role ?? "";
 
   const [recherche, setRecherche] = useState("");
   const [type, setType] = useState("");
@@ -129,10 +165,13 @@ export default function NonConformitesMagasinPage() {
   );
 
   const parOnglet = useMemo(() => {
-    const o: Record<Exclude<Onglet, "suivi">, NonConformite[]> = { expliquer: [], decider: [], actions: [], cloturees: [] };
-    filtrees.forEach((n) => o[aireOnglet(n) as Exclude<Onglet, "suivi">].push(n));
+    const o: Record<Exclude<Onglet, "chiffres">, NonConformite[]> = { atraiter: [], autres: [], cloturees: [] };
+    filtrees.forEach((n) => o[vueDe(n, role)].push(n));
+    // Les plus urgentes d'abord : en retard, puis les plus anciennes
+    const urgence = (n: NonConformite) => (n.enRetardJustif || n.enRetardAction ? 0 : 1);
+    o.atraiter.sort((a, b) => urgence(a) - urgence(b) || (a.creeLe || "").localeCompare(b.creeLe || ""));
     return o;
-  }, [filtrees]);
+  }, [filtrees, role]);
 
   const retards = useMemo(() => toutes.filter((n) => n.enRetardJustif).length, [toutes]);
   const actionsRetard = useMemo(() => toutes.filter((n) => n.enRetardAction).length, [toutes]);
@@ -144,13 +183,12 @@ export default function NonConformitesMagasinPage() {
   const fiche = ouvert ? toutes.find((n) => n.id === ouvert) ?? null : null;
 
   const onglets: (Vue & { key: Onglet })[] = [
-    { key: "expliquer", label: "À expliquer", n: parOnglet.expliquer.length, alerte: parOnglet.expliquer.some((x) => x.enRetardJustif) },
-    { key: "decider", label: estControleur ? "À décider" : "En attente coordinateur", n: parOnglet.decider.length },
-    { key: "actions", label: "Actions correctives", n: parOnglet.actions.length, alerte: parOnglet.actions.some((x) => x.enRetardAction) },
+    { key: "atraiter", label: "À traiter", n: parOnglet.atraiter.length, alerte: parOnglet.atraiter.some((x) => x.enRetardJustif || x.enRetardAction) },
+    { key: "autres", label: "En attente des autres", n: parOnglet.autres.length },
     { key: "cloturees", label: "Clôturées", n: parOnglet.cloturees.length },
-    ...(estControleur || estCoordinateur ? [{ key: "suivi" as Onglet, label: "Suivi chiffré" }] : []),
+    ...(estControleur ? [{ key: "chiffres" as Onglet, label: "Chiffres" }] : []),
   ];
-  const [onglet, setOnglet] = useVues<Onglet>("/non-conformites", onglets, estControleur ? "decider" : "expliquer");
+  const [onglet, setOnglet] = useVues<Onglet>("/non-conformites", onglets, "atraiter");
 
   if (!autorise) {
     return (
@@ -164,7 +202,7 @@ export default function NonConformitesMagasinPage() {
   }
 
 
-  const liste = onglet === "suivi" ? [] : parOnglet[onglet];
+  const liste = onglet === "chiffres" ? [] : parOnglet[onglet];
 
   return (
     <div className="h-full flex flex-col">
@@ -173,8 +211,9 @@ export default function NonConformitesMagasinPage() {
         subtitle={
           <>
             {user?.nom}
-            {user?.site && ` — ${user.site}`} · {toutes.filter((n) => n.statut !== "cloturee").length} ouverte(s)
-            {retards > 0 && <span className="text-red-600 font-medium"> · {retards} sans explication &gt; 24 h</span>}
+            {user?.site && ` — ${user.site}`} · <strong className="text-slate-800">{parOnglet.atraiter.length} à traiter par vous</strong>
+            {" · "}{parOnglet.autres.length} en attente des autres
+            {retards > 0 && <span className="text-red-600 font-medium"> · {retards} explication(s) en retard</span>}
             {actionsRetard > 0 && <span className="text-red-600 font-medium"> · {actionsRetard} action(s) en retard</span>}
           </>
         }
@@ -229,7 +268,7 @@ export default function NonConformitesMagasinPage() {
                 onglet === o.key ? "border-brand-900 text-brand-900" : "border-transparent text-slate-500 hover:text-slate-800",
               )}
             >
-              {o.key === "suivi" && <BarChart3 className="h-4 w-4" />}
+              {o.key === "chiffres" && <BarChart3 className="h-4 w-4" />}
               {o.label}
               {o.n !== undefined && (
                 <span className={cn("num text-xs rounded-full px-1.5 py-0.5", o.alerte ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-600")}>
@@ -242,6 +281,7 @@ export default function NonConformitesMagasinPage() {
       </PageHeader>
 
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+        {onglet !== "chiffres" && <GuideParcours />}
         {masquees > 0 && (
           <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
             {masquees} non-conformité(s) encore ouverte(s) sont masquées par les filtres (période, site, magasin ou type).
@@ -253,19 +293,20 @@ export default function NonConformitesMagasinPage() {
           <div className="card p-6 border-red-200 bg-red-50 text-sm text-red-700">
             {q.error instanceof Error ? q.error.message : "Erreur"}
           </div>
-        ) : onglet === "suivi" ? (
+        ) : onglet === "chiffres" ? (
           <Suivi liste={filtrees} periode={periode} />
         ) : liste.length === 0 ? (
           <div className="card p-10 text-center text-sm text-slate-500">
             <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-emerald-500" />
-            {onglet === "expliquer" && "Aucune non-conformité à expliquer."}
-            {onglet === "decider" && (estControleur ? "Aucune explication en attente de décision." : "Rien n'attend le coordinateur.")}
-            {onglet === "actions" && "Aucune action corrective en cours."}
+            {onglet === "atraiter" && "Rien à traiter pour vous. Tout est à jour."}
+            {onglet === "autres" && "Personne d'autre n'a de non-conformité à traiter."}
             {onglet === "cloturees" && "Aucune non-conformité clôturée sur la période."}
           </div>
         ) : (
           <div className="space-y-2">
-            {liste.map((n) => <Ligne key={n.id} n={n} onClick={() => setOuvert(n.id)} />)}
+            {liste.map((n) => (
+              <Ligne key={n.id} n={n} onClick={() => setOuvert(n.id)} relance={onglet === "atraiter" && estControleur && acteurDe(n) === "responsable"} />
+            ))}
           </div>
         )}
       </div>
@@ -276,9 +317,56 @@ export default function NonConformitesMagasinPage() {
   );
 }
 
+// ─── Guide du parcours ───────────────────────────────────────────────────────
+
+const ETAPES: { n: number; titre: string; acteur: string; texte: string }[] = [
+  { n: 1, titre: "Anomalie repérée", acteur: "Automatique ou coordinateur", texte: "Retard, plaque différente, sortie sans photos, attente anormale… ou constat fait sur le terrain. Le responsable est prévenu." },
+  { n: 2, titre: "Explication", acteur: "Responsable du magasin", texte: "Il explique ce qui s'est passé, sous 24 h." },
+  { n: 3, titre: "Décision", acteur: "Coordinateur", texte: "Explication acceptée : c'est terminé. Ou non-conformité confirmée : une action corrective avec échéance est demandée." },
+  { n: 4, titre: "Action corrective", acteur: "Responsable du magasin", texte: "Il réalise l'action avant l'échéance et le dit ici : c'est clôturé." },
+];
+
+/** Le parcours en 4 étapes, avec l'acteur de chacune. Replié après la première lecture. */
+function GuideParcours() {
+  const CLE = "dmc.nc.guide.ferme";
+  const [ouvert, setOuvert] = useState(() => {
+    // Replié par défaut sur téléphone (il prendrait tout l'écran) ; ouvert sur ordinateur tant qu'on ne l'a pas fermé
+    const grand = typeof window !== "undefined" && window.matchMedia?.("(min-width: 768px)").matches;
+    try { const v = localStorage.getItem(CLE); return v === null ? !!grand : v !== "1"; } catch { return !!grand; }
+  });
+  const basculer = () => {
+    setOuvert((v) => {
+      try { localStorage.setItem(CLE, v ? "1" : "0"); } catch { /* stockage indisponible */ }
+      return !v;
+    });
+  };
+  return (
+    <div className="mb-4 rounded-card border border-line bg-white">
+      <button type="button" onClick={basculer} className="flex w-full items-center justify-between px-4 py-2.5 text-left" aria-expanded={ouvert}>
+        <span className="text-sm font-medium text-slate-800">Comment ça marche ? <span className="font-normal text-slate-500">4 étapes, un seul acteur à chaque étape</span></span>
+        <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform", ouvert && "rotate-180")} />
+      </button>
+      {ouvert && (
+        <ol className="grid gap-px border-t border-line bg-line sm:grid-cols-2 lg:grid-cols-4 overflow-hidden rounded-b-card">
+          {ETAPES.map((e) => (
+            <li key={e.n} className="bg-white p-3">
+              <div className="flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-900 text-[11px] font-semibold text-white">{e.n}</span>
+                <span className="text-sm font-semibold text-slate-900">{e.titre}</span>
+              </div>
+              <div className="mt-1 text-[11px] font-medium uppercase tracking-wide text-brand-700">{e.acteur}</div>
+              <p className="mt-0.5 text-xs text-slate-600">{e.texte}</p>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
 // ─── Ligne de liste ──────────────────────────────────────────────────────────
 
-function Ligne({ n, onClick }: { n: NonConformite; onClick: () => void }) {
+function Ligne({ n, onClick, relance }: { n: NonConformite; onClick: () => void; relance?: boolean }) {
   const alerte = n.enRetardJustif || n.enRetardAction;
   return (
     <button
@@ -291,7 +379,8 @@ function Ligne({ n, onClick }: { n: NonConformite; onClick: () => void }) {
           <div className="flex items-center gap-2 flex-wrap">
             <Flag className={cn("h-4 w-4 shrink-0", alerte ? "text-red-500" : "text-amber-500")} />
             <span className="font-semibold text-sm text-slate-900">{n.typeLabel}</span>
-            {n.origine === "manuel" && <span className="badge-neutral">Constat</span>}
+            {n.origine === "manuel" && <span className="badge-neutral">Constat terrain</span>}
+            {relance && <span className="badge-warn">À relancer</span>}
           </div>
           <div className="mt-1 text-sm text-slate-700 flex items-center gap-2 flex-wrap">
             {n.numCmd && <span className="font-mono font-medium">{n.numCmd}</span>}
@@ -300,17 +389,14 @@ function Ligne({ n, onClick }: { n: NonConformite; onClick: () => void }) {
           <div className="mt-0.5 text-xs text-slate-500 flex items-center gap-3 flex-wrap">
             {n.zone && <span>{n.zone}</span>}
             <span>{formatRelative(n.creeLe)}</span>
-            {n.statut === "ouverte" || n.statut === "contestee" ? (
-              <span className={cn(n.enRetardJustif ? "text-red-600 font-medium" : "")}>
-                <Clock className="inline h-3 w-3 mr-0.5 -mt-0.5" />
-                {delaiTexte(n.limiteJustif)}
-              </span>
-            ) : null}
-            {n.statut === "action_en_cours" && n.actionEcheance && (
-              <span className={cn(n.enRetardAction && "text-red-600 font-medium")}>Échéance {n.actionEcheance}</span>
-            )}
           </div>
           {n.detail && <p className="mt-1.5 text-xs text-slate-600 line-clamp-2">{n.detail}</p>}
+          {n.statut !== "cloturee" && (
+            <p className={cn("mt-1.5 text-xs flex items-center gap-1.5", alerte ? "text-red-700 font-medium" : "text-slate-700")}>
+              <ArrowRight className="h-3.5 w-3.5 shrink-0" />
+              {prochaineEtape(n)}
+            </p>
+          )}
         </div>
         <span className={cn(STATUT_BADGE[n.statut], "shrink-0")}>{STATUT_LABEL[n.statut]}</span>
       </div>
@@ -327,7 +413,7 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
   const email = user?.email ?? "";
   const peutExpliquer = (user?.role === "responsable" || user?.role === "coordinateur" || user?.role === "admin") && (n.statut === "ouverte" || n.statut === "contestee");
   const peutDecider = estControleur && n.statut === "expliquee";
-  const peutTerminer = n.statut === "action_en_cours";
+  const peutTerminer = n.statut === "action_en_cours" && (user?.role === "responsable" || user?.role === "coordinateur" || user?.role === "admin");
 
   // Champs (tous les hooks avant tout retour conditionnel)
   const [explication, setExplication] = useState("");
@@ -359,7 +445,7 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
 
   const mExpliquer = useMutation({
     mutationFn: () => api.nonConformites.justifier({ id: n.id, acteurEmail: email, explication: explication.trim(), motifs: Array.from(motifs) }),
-    onSuccess: () => fin("Explication envoyée au contrôleur"),
+    onSuccess: () => fin("Explication envoyée au coordinateur"),
     onError: echec,
   });
   const mDecider = useMutation({
@@ -369,7 +455,7 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
         action: action.trim(), echeance,
       }),
     onSuccess: () =>
-      fin(decision === "acceptee" ? "Explication acceptée — clôturée" : decision === "contestee" ? "Explication contestée" : "Non-conformité confirmée"),
+      fin(decision === "acceptee" ? "Explication acceptée — clôturée" : "Non-conformité confirmée — l'action corrective est demandée"),
     onError: echec,
   });
   const mTerminer = useMutation({
@@ -387,7 +473,7 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
   function envoyerDecision(e: FormEvent) {
     e.preventDefault();
     if (!decision) return toast.error("Choisis une décision.");
-    if (decision !== "acceptee" && !commentaire.trim()) return toast.error("Un commentaire est obligatoire.");
+    if (decision === "confirmee" && !commentaire.trim()) return toast.error("Explique pourquoi tu confirmes.");
     if (decision === "confirmee" && (!action.trim() || !echeance)) return toast.error("Précise l'action corrective et l'échéance.");
     mDecider.mutate();
   }
@@ -400,6 +486,27 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
           {n.enRetardJustif && <span className="badge-danger">Sans explication depuis plus de 24 h</span>}
           {n.enRetardAction && <span className="badge-danger">Échéance dépassée</span>}
         </div>
+
+        {/* Prochaine étape : toujours en haut, avec l'acteur */}
+        {n.statut !== "cloturee" ? (
+          <div className={cn("rounded-lg border p-3 text-sm flex gap-2", (peutExpliquer || peutDecider || peutTerminer) ? "border-brand-300 bg-brand-50 text-brand-900" : "border-line bg-slate-50 text-slate-700")}>
+            <ArrowRight className="h-4 w-4 mt-0.5 shrink-0" />
+            <div>
+              <div className="font-semibold">
+                {(peutExpliquer || peutDecider || peutTerminer) ? "C'est à vous d'agir" : `En attente : ${ACTEUR_LABEL[acteurDe(n) ?? "responsable"].toLowerCase()}`}
+              </div>
+              <div>{prochaineEtape(n)}</div>
+              {!(peutExpliquer || peutDecider || peutTerminer) && (n.enRetardJustif || n.enRetardAction) && (
+                <div className="mt-1 text-xs font-medium text-red-700">En retard : pensez à relancer le responsable.</div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900 flex gap-2">
+            <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
+            <div><span className="font-semibold">Terminée</span> — {prochaineEtape(n).toLowerCase()}{n.clotureLe ? `, le ${formatDateTime(n.clotureLe)}` : ""}</div>
+          </div>
+        )}
 
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
           <Info label="Ouverte" valeur={formatDateTime(n.creeLe)} />
@@ -425,17 +532,11 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
           </div>
         )}
 
-        {n.statut === "contestee" && n.controleurCommentaire && (
-          <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-800">
-            <div className="text-xs font-medium mb-0.5">Explication contestée par le contrôleur</div>
-            {n.controleurCommentaire}
-          </div>
-        )}
         {(n.statut === "action_en_cours" || (n.statut === "cloturee" && n.action)) && (
           <div className="rounded-lg bg-indigo-50 border border-indigo-200 p-3 text-sm text-indigo-900">
             <div className="text-xs font-medium mb-0.5 flex items-center gap-1"><Wrench className="h-3.5 w-3.5" />Action corrective</div>
             {n.action} <span className="text-indigo-700">· échéance {n.actionEcheance}</span>
-            {n.controleurCommentaire && <div className="mt-1 text-xs italic">« {n.controleurCommentaire} »</div>}
+            {n.controleurCommentaire && <div className="mt-1 text-xs italic">Coordinateur : « {n.controleurCommentaire} »</div>}
           </div>
         )}
         {n.explication && n.statut !== "ouverte" && (
@@ -471,23 +572,22 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
             )}
             <textarea className="input min-h-[90px]" placeholder="Que s'est-il passé ? Qu'est-ce qui sera fait pour que cela ne se reproduise pas ?" value={explication} onChange={(e) => setExplication(e.target.value)} />
             <button className="btn-primary w-full" disabled={mExpliquer.isPending}>
-              {mExpliquer.isPending ? "Envoi…" : "Envoyer au contrôleur"}
+              {mExpliquer.isPending ? "Envoi…" : "Envoyer au coordinateur"}
             </button>
           </form>
         )}
 
         {peutDecider && (
           <form onSubmit={envoyerDecision} className="space-y-3 border-t border-line pt-4">
-            <h3 className="text-sm font-semibold text-slate-900">Décision du contrôleur</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <ChoixDecision actif={decision === "acceptee"} onClick={() => setDecision("acceptee")} icone={<CheckCircle2 className="h-4 w-4" />} titre="Accepter" sous="Explication recevable — clôturer" couleur="emerald" />
-              <ChoixDecision actif={decision === "contestee"} onClick={() => setDecision("contestee")} icone={<XCircle className="h-4 w-4" />} titre="Contester" sous="Redemander une explication" couleur="amber" />
-              <ChoixDecision actif={decision === "confirmee"} onClick={() => setDecision("confirmee")} icone={<Wrench className="h-4 w-4" />} titre="Confirmer" sous="Non-conformité avérée — action" couleur="red" />
+            <h3 className="text-sm font-semibold text-slate-900">Votre décision</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <ChoixDecision actif={decision === "acceptee"} onClick={() => setDecision("acceptee")} icone={<CheckCircle2 className="h-4 w-4" />} titre="Accepter l'explication" sous="C'est recevable : la non-conformité est clôturée" couleur="emerald" />
+              <ChoixDecision actif={decision === "confirmee"} onClick={() => setDecision("confirmee")} icone={<Wrench className="h-4 w-4" />} titre="Confirmer la non-conformité" sous="C'est avéré : on demande une action corrective" couleur="red" />
             </div>
             {decision && (
               <textarea
                 className="input min-h-[70px]"
-                placeholder={decision === "acceptee" ? "Commentaire (facultatif)" : "Commentaire (obligatoire)"}
+                placeholder={decision === "acceptee" ? "Commentaire (facultatif)" : "Pourquoi confirmez-vous ? (obligatoire)"}
                 value={commentaire}
                 onChange={(e) => setCommentaire(e.target.value)}
               />
@@ -526,7 +626,7 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
             <ol className="space-y-2">
               {n.historique.map((h, i) => (
                 <li key={i} className="text-xs text-slate-600 flex gap-2">
-                  <span className="num text-slate-400 shrink-0 w-28">{formatDateTime(h.at)}</span>
+                  <span className="num text-slate-400 shrink-0 w-32 whitespace-nowrap">{formatDateTime(h.at)}</span>
                   <span><span className="font-medium text-slate-800">{h.par}</span> — {h.texte}</span>
                 </li>
               ))}

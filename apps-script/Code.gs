@@ -1614,14 +1614,15 @@ function getMedias(params) {
 //
 // Une non-conformité (NC) est créée AUTOMATIQUEMENT quand une anomalie est détectée dans le flux
 // (retard, plaque différente, sortie sans photos, attente excessive, validation trop rapide)
-// ou MANUELLEMENT par le contrôleur / l'admin (constat terrain).
+// ou MANUELLEMENT par le coordinateur / l'admin (constat terrain).
 //
-// Cycle de vie (un seul niveau de gravité) :
-//   ouverte        → le responsable doit expliquer sous CONFIG.NC_DELAI_JUSTIF_H heures
-//   expliquee      → le contrôleur doit décider
-//   contestee      → explication refusée : le responsable doit en donner une nouvelle (→ expliquee)
-//   action_en_cours→ NC confirmée : une action corrective (avec échéance) doit être réalisée
-//   cloturee       → décision "acceptée" (explication recevable) ou action corrective terminée
+// Parcours en 4 étapes — chacune a UN acteur :
+//   ouverte         → le RESPONSABLE du magasin explique (sous CONFIG.NC_DELAI_JUSTIF_H heures)
+//   expliquee       → le COORDINATEUR tranche : « explication acceptée » (→ clôturée)
+//                     ou « non-conformité confirmée » (→ action corrective avec échéance)
+//   action_en_cours → le RESPONSABLE réalise l'action corrective avant l'échéance
+//   cloturee        → terminé
+// (Le statut « contestee » n'existe plus : les anciennes lignes sont lues comme « ouverte ».)
 
 const NC_TYPES = {
   RETARD:            { label: "Retard de livraison (> 30 min)",       actif: true },
@@ -1629,7 +1630,7 @@ const NC_TYPES = {
   SORTIE_SANS_PHOTOS:{ label: "Sortie sans photos de chargement",     actif: true },
   ATTENTE:           { label: "Attente / blocage anormal",            actif: true },
   VALIDATION_RAPIDE: { label: "Arrivée validée trop vite",            actif: true },
-  CONSTAT:           { label: "Constat du contrôleur",                actif: true },
+  CONSTAT:           { label: "Constat terrain",                      actif: true },
   ERREUR_VALIDATION: { label: "Erreur de validation corrigée",        actif: true },
 };
 
@@ -1773,7 +1774,7 @@ function ncNotifierOuverture_(type, id, numCmd, client, site, zone, resp, detail
       text: "🚩 *Non-conformité — " + NC_TYPES[type].label + "*\n" +
             (numCmd ? "Commande " + numCmd : "") + (client ? " · " + client : "") + " · " + (zone || site || "") + "\n" +
             (detail ? detail + "\n" : "") +
-            (resp ? "📣 " + mention(resp) + " — merci d'expliquer sous " + CONFIG.NC_DELAI_JUSTIF_H + " h dans l'appli (Contrôle → Mes non-conformités)." : "") +
+            (resp ? "📣 " + mention(resp) + " — merci d'expliquer sous " + CONFIG.NC_DELAI_JUSTIF_H + " h dans l'appli (menu Non-conformités → À traiter)." : "") +
             "\n👉 https://fadbazz-bot.github.io/dmc-livraisons/"
     });
   } catch (e) {}
@@ -1810,7 +1811,7 @@ function ncSerialize_(n) {
     expId: n.EXP_ID || null, numCmd: n.NUM_CMD || "", client: n.CLIENT || "",
     numExpedition: n.NUM_EXPEDITION || "", site: n.SITE || "", zone: n.ZONE || "",
     responsableEmail: n.RESPONSABLE_EMAIL || "", creeLe: creeLe, detail: n.DETAIL || "",
-    statut: n.STATUT, origine: n.ORIGINE || "auto",
+    statut: n.STATUT === "contestee" ? "ouverte" : n.STATUT, origine: n.ORIGINE || "auto",
     explication: n.EXPLICATION || "", expliquePar: n.EXPLIQUE_PAR || "", expliqueLe: ncIso_(n.EXPLIQUE_LE) || null,
     motifs: n.MOTIFS || "",
     controleurEmail: n.CONTROLEUR_EMAIL || "", decision: n.DECISION || "", decisionLe: ncIso_(n.DECISION_LE) || null,
@@ -1919,16 +1920,15 @@ function ncSyncRetardExp_(expId, motifs, commentaire, email) {
 }
 
 /**
- * Décision du contrôleur sur une NC expliquée :
+ * Décision du coordinateur sur une NC expliquée — deux issues seulement :
  *   acceptee  → l'explication est recevable : NC clôturée
- *   contestee → explication refusée : le responsable doit en donner une nouvelle (commentaire obligatoire)
- *   confirmee → NC confirmée : action corrective obligatoire (texte + échéance)
+ *   confirmee → NC confirmée : commentaire + action corrective obligatoires (texte + échéance)
  */
 function decisionNonConformite(params) {
   const u = ncUser_(params.acteurEmail);
   if (["coordinateur", "controleur", "admin"].indexOf(u.ROLE) === -1) throw new Error("Réservé au coordinateur");
   const decision = String(params.decision || "");
-  if (["acceptee", "contestee", "confirmee"].indexOf(decision) === -1) throw new Error("Décision invalide");
+  if (["acceptee", "confirmee"].indexOf(decision) === -1) throw new Error("Décision invalide : accepter l'explication ou confirmer la non-conformité");
   const comm = String(params.commentaire || "").trim();
   if (decision !== "acceptee" && !comm) throw new Error("Un commentaire est obligatoire");
   const action = String(params.action || "").trim();
@@ -1948,9 +1948,6 @@ function decisionNonConformite(params) {
     if (decision === "acceptee") {
       Object.assign(base, { STATUT: "cloturee", CLOTURE_LE: ts });
       texte = "Explication acceptée — clôturée" + (comm ? " : " + comm : "");
-    } else if (decision === "contestee") {
-      Object.assign(base, { STATUT: "contestee" });
-      texte = "Explication contestée : " + comm;
     } else {
       Object.assign(base, { STATUT: "action_en_cours", ACTION: action, ACTION_ECHEANCE: echeance });
       texte = "Non-conformité confirmée : " + comm + " — action : " + action + " (avant le " + echeance + ")";
@@ -1983,12 +1980,10 @@ function ncNotifierDecision_(n, decision, comm, action, echeance, u) {
     const resp = n.RESPONSABLE_EMAIL;
     const titre = (NC_TYPES[n.TYPE] || {}).label || n.TYPE;
     sendChatMessage({
-      text: (decision === "contestee"
-        ? "↩️ *Explication contestée* — " + titre
-        : "✅ *Non-conformité confirmée* — " + titre) + "\n" +
+      text: "✅ *Non-conformité confirmée* — " + titre + "\n" +
         (n.NUM_CMD ? "Commande " + n.NUM_CMD + " · " : "") + (n.ZONE || n.SITE || "") + "\n" +
-        "Contrôleur : " + (u.NOM || u.EMAIL) + " — " + comm + "\n" +
-        (decision === "confirmee" ? "🛠 Action : " + action + " (avant le " + echeance + ")\n" : "") +
+        "Coordinateur : " + (u.NOM || u.EMAIL) + " — " + comm + "\n" +
+        "🛠 Action : " + action + " (avant le " + echeance + ")\n" +
         (resp ? "📣 " + mention(resp) : "")
     });
   } catch (e) {}
@@ -2166,8 +2161,8 @@ function ncSyncDecisionHistorique_(expId, decision, email, commentaire) {
     const ts = now();
     const champs = { CONTROLEUR_EMAIL: email, DECISION: decision, DECISION_LE: ts, CONTROLEUR_COMMENTAIRE: commentaire || "" };
     if (decision === "acceptee") { champs.STATUT = "cloturee"; champs.CLOTURE_LE = ts; }
-    else champs.STATUT = "contestee";
-    champs.HISTORIQUE = ncHisto_(n.HISTORIQUE, email, decision === "acceptee" ? "Explication acceptée" + (commentaire ? " : " + commentaire : "") : "Explication contestée : " + commentaire);
+    else champs.STATUT = "ouverte"; // refusée : le responsable doit expliquer à nouveau
+    champs.HISTORIQUE = ncHisto_(n.HISTORIQUE, email, decision === "acceptee" ? "Explication acceptée" + (commentaire ? " : " + commentaire : "") : "Explication refusée, à reformuler : " + commentaire);
     ncMaj_(sh, n._row, champs);
   } catch (e) { console.error("ncSyncDecisionHistorique_ : " + e.message); }
 }

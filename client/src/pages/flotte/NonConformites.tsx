@@ -31,15 +31,21 @@ export default function NonConformitesPage() {
 
   return (
     <FlotteLayout
-      subtitle={`${livraisons.length} non-conformités · ${sansJustif} sans justification`}
+      subtitle={`Retards flotte · ${livraisons.length} ligne(s) · ${sansJustif} sans justification`}
       rightSlot={<BarreFiltres f={f} />}
     >
       <div className="space-y-4">
         <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-900 flex items-start gap-2">
           <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-          <div>
-            <strong>Non-conformités</strong> = livraisons en retard sur la date prévue OU départ après 10h (LOI 10h).
-            Le responsable flotte doit justifier chaque ligne par un motif et un commentaire.
+          <div className="space-y-1">
+            <div>
+              <strong>Retards de la flotte interne</strong> : livraisons faites après la date prévue, ou parties après 10h (LOI 10h).
+              Le responsable chauffeurs justifie chaque ligne (motif + commentaire) en cliquant dessus.
+            </div>
+            <div className="text-xs text-amber-800">
+              À ne pas confondre avec le menu <strong>Non-conformités</strong> à gauche, qui suit les anomalies dans les
+              magasins (retard de 30 min, plaque, photos…) avec le parcours explication → décision du coordinateur.
+            </div>
           </div>
         </div>
 
