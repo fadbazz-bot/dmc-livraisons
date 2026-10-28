@@ -16,7 +16,7 @@ import { useVues } from "@/lib/vues";
 import { siteDeZone } from "@/lib/portee";
 import { ConfirmerClientModal } from "@/components/modals/ConfirmerClientModal";
 import { BarreOutilsTerrain, pastillesStandard } from "@/components/BarreOutilsTerrain";
-import { appliquer, compter, minutesDepuis, FILTRES_VIDES, type FiltresTerrain } from "@/lib/listeTerrain";
+import { appliquer, compter, minutesDepuis, FILTRES_VIDES, PHOTOS_MIN, type FiltresTerrain } from "@/lib/listeTerrain";
 
 type Section = "clients" | "entrer" | "sortir";
 
@@ -80,8 +80,8 @@ export default function PosteGardePage() {
     () =>
       appliquer(aSortir, fSortir, "chargement").filter((e) => {
         const n = e.nbPhotosChargement ?? 0;
-        if (fSortir.extra === "photos_manquantes") return n < 3;
-        if (fSortir.extra === "pret") return n >= 3;
+        if (fSortir.extra === "photos_manquantes") return n < PHOTOS_MIN;
+        if (fSortir.extra === "pret") return n >= PHOTOS_MIN;
         return true;
       }),
     [aSortir, fSortir],
@@ -199,8 +199,8 @@ export default function PosteGardePage() {
                 extra: {
                   options: [
                     { value: "", label: "Tous" },
-                    { value: "pret", label: "Photos OK", n: aSortir.filter((e) => (e.nbPhotosChargement ?? 0) >= 3).length },
-                    { value: "photos_manquantes", label: "Photos manquantes", n: aSortir.filter((e) => (e.nbPhotosChargement ?? 0) < 3).length },
+                    { value: "pret", label: "Photos OK", n: aSortir.filter((e) => (e.nbPhotosChargement ?? 0) >= PHOTOS_MIN).length },
+                    { value: "photos_manquantes", label: "Photos manquantes", n: aSortir.filter((e) => (e.nbPhotosChargement ?? 0) < PHOTOS_MIN).length },
                   ],
                 },
               })}
@@ -472,9 +472,9 @@ function ExpActionCard({
         <div className="flex flex-col items-end gap-1.5">
           <StatutBadge statut={exp.statut} />
           {enSortie && exp.nbPhotosChargement !== undefined && (
-            <span className={nbPhotos >= 3 ? "badge-success" : "badge-warn"}>
-              {nbPhotos >= 3 ? <Camera className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
-              {nbPhotos >= 3 ? `${nbPhotos} photos de chargement` : "Photos de chargement manquantes"}
+            <span className={nbPhotos >= PHOTOS_MIN ? "badge-success" : "badge-warn"}>
+              {nbPhotos >= PHOTOS_MIN ? <Camera className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+              {nbPhotos >= PHOTOS_MIN ? `${nbPhotos} photo${nbPhotos > 1 ? "s" : ""} de chargement` : "Photos de chargement manquantes"}
             </span>
           )}
         </div>

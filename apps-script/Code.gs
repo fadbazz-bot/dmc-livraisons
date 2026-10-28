@@ -39,7 +39,7 @@ const CONFIG = {
   DRIVE_ROOT_NAME:          "DMC Livraisons - Photos chargement", // dossier racine (créé au 1er usage)
   DRIVE_ROOT_FOLDER_ID:     "",   // optionnel : ID d'un dossier existant à utiliser comme racine
   PHOTOS_CHARGEMENT_OBLIGATOIRES: true,
-  PHOTOS_CHARGEMENT_MIN:    3,    // minimum de photos avant la sortie du site
+  PHOTOS_CHARGEMENT_MIN:    1,    // minimum de photos avant la sortie du site
   PHOTOS_CHARGEMENT_MAX:    15,
   // ── Arrivée du client au magasin (remplace le code PIN) ──
   // Preuve = photo de la plaque (véhicule) ou "client à pied" (sans véhicule enregistré à l'entrée).

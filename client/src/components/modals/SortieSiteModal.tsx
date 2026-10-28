@@ -9,9 +9,9 @@ import { MultiPhotoCapture } from "@/components/MultiPhotoCapture";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/Toast";
 import { formatDuree } from "@/lib/format";
+import { PHOTOS_MIN } from "@/lib/listeTerrain";
 
 /** Doit rester aligné sur CONFIG.PHOTOS_CHARGEMENT_MIN (Code.gs). */
-const PHOTOS_MIN = 3;
 
 interface Props {
   exp: Expedition;

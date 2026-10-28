@@ -4,6 +4,9 @@ import { correspond } from "@/lib/similarite";
 
 /** Tri / filtre communs aux écrans terrain (poste de garde, agent showroom, préparation). */
 
+/** Nombre minimum de photos de chargement avant la sortie du site (même valeur que le serveur). */
+export const PHOTOS_MIN = 1;
+
 export type Tri = "ancien" | "recent" | "client" | "magasin" | "plaque";
 
 export const TRI_LABELS: Record<Tri, string> = {

@@ -14,7 +14,7 @@ import { cn } from "@/lib/cn";
 import { useVues } from "@/lib/vues";
 import { UrgentBadge } from "@/components/UrgentBadge";
 import { BarreOutilsTerrain, pastillesStandard } from "@/components/BarreOutilsTerrain";
-import { appliquer, compter, minutesDepuis, FILTRES_VIDES, type FiltresTerrain } from "@/lib/listeTerrain";
+import { appliquer, compter, minutesDepuis, FILTRES_VIDES, PHOTOS_MIN, type FiltresTerrain } from "@/lib/listeTerrain";
 
 /**
  * Catégorise une zone (libellé complet type "Parc Diamniadio" ou catégorie
@@ -47,7 +47,6 @@ function zoneToSite(zone: string): "Dakar" | "Diamniadio" {
  * (camion sur site, en attente du code), filtrées par catégorie de magasin
  * ET par site du responsable (voir zoneCategorie / zoneToSite ci-dessus).
  */
-const PHOTOS_MIN = 3;
 
 export default function ResponsablePage() {
   const { user } = useAuth();
@@ -346,7 +345,7 @@ function ChargementCard({ exp, onAction }: { exp: Expedition; onAction: () => vo
       </div>
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-slate-500">
-          {ok ? "Photos faites : le véhicule peut passer au poste de garde." : `Minimum ${PHOTOS_MIN} photos avant le poste de garde.`}
+          {ok ? "Photos faites : le véhicule peut passer au poste de garde." : `Minimum ${PHOTOS_MIN} photo${PHOTOS_MIN > 1 ? "s" : ""} avant le poste de garde.`}
         </p>
         <button onClick={onAction} className={cn("shrink-0 gap-2", ok ? "btn-outline" : "btn-primary")}>
           <Camera className="h-4 w-4" />

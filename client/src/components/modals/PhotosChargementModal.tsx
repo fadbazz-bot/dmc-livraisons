@@ -173,7 +173,7 @@ export function PhotosChargementModal({ exp, open, onClose }: Props) {
             {total >= min ? <CheckCircle2 className="h-5 w-5" /> : <Camera className="h-5 w-5" />}
             <div>
               <div className="text-sm font-semibold">
-                <span className="num">{total}</span> / {min} photos minimum
+                <span className="num">{total}</span> / {min} photo{min > 1 ? "s" : ""} minimum
               </div>
               <div className="text-xs opacity-80">
                 {total >= min ? "Tu peux en ajouter d'autres, puis terminer." : consigne(total)}
