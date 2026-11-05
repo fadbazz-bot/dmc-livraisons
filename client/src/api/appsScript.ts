@@ -366,6 +366,9 @@ export interface NonConformite {
   expliquePar: string;
   expliqueLe: string | null;
   motifs: string;
+  /** Cause réelle du retard quand elle n'est pas le magasin (renseignée après enquête). Vide = le magasin. */
+  imputation: string;
+  imputationLabel: string;
   controleurEmail: string;
   decision: string;
   decisionLe: string | null;
@@ -383,6 +386,66 @@ export interface NonConformite {
 export interface NcListe {
   liste: NonConformite[];
   types: { code: string; label: string; actif: boolean }[];
+  imputations?: Imputation[];
+}
+
+export interface Imputation {
+  code: string;
+  label: string;
+}
+
+/** Une étape (tronçon) de la livraison : de l'événement précédent à celui-ci. */
+export interface FriseSegment {
+  code: "entree" | "magasin" | "photos" | "sortie";
+  label: string;
+  acteurRole: string;
+  acteurNom: string;
+  acteurEmail: string;
+  debut: string;
+  fin: string | null;
+  dureeMin: number;
+  enCours: boolean;
+  /** Causes les plus plausibles d'un retard sur cette étape (codes d'imputation). */
+  suggestions: string[];
+}
+
+export interface FriseJalon {
+  code: string;
+  label: string;
+  at: string;
+  acteurNom: string;
+  acteurEmail: string;
+  detail: string;
+}
+
+export interface FriseEvenement {
+  jalon: string;
+  at: string;
+  acteurNom: string;
+  acteurEmail: string;
+  commentaire: string;
+}
+
+export interface FriseLivraison {
+  expId: string;
+  numCmd: string;
+  client: string;
+  site: string;
+  zone: string;
+  numExpedition: string;
+  plaque: string;
+  chauffeur: string;
+  statut: string;
+  showroom: boolean;
+  delaiMaxMin: number;
+  totalMin: number | null;
+  termine: boolean;
+  depasseMin: number;
+  plusLongue: string;
+  jalons: FriseJalon[];
+  segments: FriseSegment[];
+  evenements?: FriseEvenement[];
+  ncs?: { id: string; type: string; typeLabel: string; statut: NcStatut; imputation: string }[];
 }
 
 export type NcDecision = "acceptee" | "contestee" | "confirmee";
@@ -400,8 +463,25 @@ export const coordination = {
 export const nonConformites = {
   lister: (acteurEmail: string, depuis?: string) =>
     apiGet<NcListe>("getNonConformites", depuis ? { acteurEmail, depuis } : { acteurEmail }),
-  justifier: (input: { id: string; acteurEmail: string; explication: string; motifs?: string[] }) =>
-    apiPost<{ ok: true }>("justifierNonConformite", input),
+  justifier: (input: {
+    id: string;
+    acteurEmail: string;
+    explication: string;
+    motifs?: string[];
+    /** Cause réelle si ce n'est pas le magasin (garde, showroom, commercial, client, autre) */
+    imputation?: string;
+    /** Coordinateur seulement : clôture directement (retard non imputable au magasin) */
+    cloturer?: boolean;
+  }) => apiPost<{ ok: true; cloturee?: boolean }>("justifierNonConformite", input),
+  /** Frise détaillée d'une livraison (durée de chaque étape + journal) */
+  frise: (acteurEmail: string, expId: string) =>
+    apiGet<FriseLivraison>("getFriseExpedition", { acteurEmail, expId }),
+  /** Frises des livraisons récentes (coordinateur / admin) */
+  frises: (acteurEmail: string, depuis?: string) =>
+    apiGet<{ liste: FriseLivraison[]; imputations: Imputation[] }>(
+      "getFrisesLivraisons",
+      depuis ? { acteurEmail, depuis } : { acteurEmail },
+    ),
   decider: (input: {
     id: string;
     acteurEmail: string;
@@ -409,6 +489,7 @@ export const nonConformites = {
     commentaire?: string;
     action?: string;
     echeance?: string;
+    imputation?: string;
   }) => apiPost<{ ok: true }>("decisionNonConformite", input),
   terminerAction: (input: { id: string; acteurEmail: string; commentaire: string }) =>
     apiPost<{ ok: true }>("terminerActionNonConformite", input),

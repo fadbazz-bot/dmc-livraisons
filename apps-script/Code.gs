@@ -265,6 +265,8 @@ function handleRequest(e) {
       "contredireJustif":       () => contredireJustif(params),
       // Non-conformités
       "getNonConformites":            () => getNonConformites(params),
+      "getFriseExpedition":           () => getFriseExpedition(params),
+      "getFrisesLivraisons":          () => getFrisesLivraisons(params),
       "justifierNonConformite":       () => justifierNonConformite(params),
       "decisionNonConformite":        () => decisionNonConformite(params),
       "terminerActionNonConformite":  () => terminerActionNonConformite(params),
@@ -1640,14 +1642,14 @@ const COL_NC = {
   EXPLICATION:14, EXPLIQUE_PAR:15, EXPLIQUE_LE:16,
   CONTROLEUR_EMAIL:17, DECISION:18, DECISION_LE:19, CONTROLEUR_COMMENTAIRE:20,
   ACTION:21, ACTION_ECHEANCE:22, ACTION_FAITE_LE:23, CLOTURE_LE:24,
-  RELANCE_LE:25, HISTORIQUE:26, MOTIFS:27,
+  RELANCE_LE:25, HISTORIQUE:26, MOTIFS:27, IMPUTATION:28,
 };
 const NC_HEADERS = ["ID","Type","ExpId","NumCmd","Client","NumExpedition","Site","Zone",
   "ResponsableEmail","CreeLe","Detail","Statut","Origine",
   "Explication","ExpliquePar","ExpliqueLe",
   "ControleurEmail","Decision","DecisionLe","ControleurCommentaire",
   "Action","ActionEcheance","ActionFaiteLe","ClotureLe",
-  "RelanceLe","Historique","Motifs"];
+  "RelanceLe","Historique","Motifs","Imputation"];
 
 function ncSheet_() {
   const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
@@ -1657,6 +1659,10 @@ function ncSheet_() {
     sh.appendRow(NC_HEADERS);
     sh.getRange(1, 1, 1, NC_HEADERS.length).setBackground("#1a3a5c").setFontColor("#ffffff").setFontWeight("bold");
     sh.setFrozenRows(1);
+  } else if (sh.getLastColumn() < NC_HEADERS.length || !sh.getRange(1, NC_HEADERS.length).getValue()) {
+    // Feuille créée avant l'ajout d'une colonne (ex. « Imputation ») : on complète l'en-tête
+    if (sh.getMaxColumns() < NC_HEADERS.length) sh.insertColumnsAfter(sh.getMaxColumns(), NC_HEADERS.length - sh.getMaxColumns());
+    sh.getRange(1, 1, 1, NC_HEADERS.length).setValues([NC_HEADERS]).setBackground("#1a3a5c").setFontColor("#ffffff").setFontWeight("bold");
   }
   return sh;
 }
@@ -1782,18 +1788,45 @@ function ncNotifierOuverture_(type, id, numCmd, client, site, zone, resp, detail
 
 // ─── Visibilité & sérialisation ───────────────────────────────────────────────
 
+/** Liste « Dakar, Diamniadio » / « Parc Acier + Dépôt » → éléments nettoyés (un responsable peut couvrir plusieurs sites/magasins). */
+function ncListe_(v) {
+  return String(v || "").split(/[,;\/+&]|\s+et\s+/i).map(function(s) { return s.trim(); }).filter(Boolean);
+}
+
 function ncVisible_(u, n) {
   if (u.ROLE === "admin") return true;
-  const siteNc = String(n.SITE || "");
-  if (u.ROLE === "controleur" || u.ROLE === "coordinateur") return !u.SITE || !siteNc || u.SITE === siteNc;
+  const siteNc = String(n.SITE || "").trim().toLowerCase();
+  if (u.ROLE === "controleur" || u.ROLE === "coordinateur") {
+    const sites = ncListe_(u.SITE).map(function(s) { return s.toLowerCase(); });
+    return !sites.length || !siteNc || sites.indexOf(siteNc) !== -1;
+  }
   if (u.ROLE === "responsable") {
+    // 1) Désigné nommément sur la NC (c'est lui qui a validé l'arrivée) : toujours visible, quel que soit son site/magasin
     const mails = String(n.RESPONSABLE_EMAIL || "").toLowerCase();
     if (mails && mails.split(",").map(function(s) { return s.trim(); }).indexOf(String(u.EMAIL).toLowerCase()) !== -1) return true;
-    if (u.SITE && siteNc && u.SITE !== siteNc) return false;
-    const cat = ncCategorieZone_(n.ZONE), cu = ncCategorieZone_(u.ZONE);
-    return !u.ZONE || cu === "autre" || cat === "autre" || cat === cu;
+    // 2) Sinon : même site ET même type de magasin (un responsable peut en couvrir plusieurs)
+    const sites = ncListe_(u.SITE).map(function(s) { return s.toLowerCase(); });
+    if (sites.length && siteNc && sites.indexOf(siteNc) === -1) return false;
+    const cat = ncCategorieZone_(n.ZONE);
+    const cus = ncListe_(u.ZONE).map(ncCategorieZone_);
+    return !cus.length || cus.indexOf("autre") !== -1 || cat === "autre" || cus.indexOf(cat) !== -1;
   }
   return false;
+}
+
+/** Qui est à l'origine du retard ? Le coordinateur le renseigne après enquête (frise des étapes). */
+const NC_IMPUTATIONS = {
+  magasin:    "Le magasin (responsable)",
+  garde:      "Poste de garde",
+  showroom:   "Agent showroom",
+  commercial: "Commercial (instruction tardive ou incomplète)",
+  client:     "Client / chauffeur (arrivée tardive, trajet)",
+  autre:      "Autre cause indépendante du magasin",
+};
+
+function ncImputation_(v) {
+  const k = String(v || "").trim();
+  return NC_IMPUTATIONS[k] ? k : "";
 }
 
 function ncSerialize_(n) {
@@ -1814,6 +1847,7 @@ function ncSerialize_(n) {
     statut: n.STATUT === "contestee" ? "ouverte" : n.STATUT, origine: n.ORIGINE || "auto",
     explication: n.EXPLICATION || "", expliquePar: n.EXPLIQUE_PAR || "", expliqueLe: ncIso_(n.EXPLIQUE_LE) || null,
     motifs: n.MOTIFS || "",
+    imputation: ncImputation_(n.IMPUTATION), imputationLabel: NC_IMPUTATIONS[ncImputation_(n.IMPUTATION)] || "",
     controleurEmail: n.CONTROLEUR_EMAIL || "", decision: n.DECISION || "", decisionLe: ncIso_(n.DECISION_LE) || null,
     controleurCommentaire: n.CONTROLEUR_COMMENTAIRE || "",
     action: n.ACTION || "", actionEcheance: echeance || null, actionFaiteLe: ncIso_(n.ACTION_FAITE_LE) || null,
@@ -1845,7 +1879,11 @@ function getNonConformites(params) {
     return true;
   }).map(ncSerialize_);
   liste.sort(function(a, b) { return (b.creeLe || "").localeCompare(a.creeLe || ""); });
-  return { liste: liste, types: ncTypesPublics_() };
+  return { liste: liste, types: ncTypesPublics_(), imputations: ncImputationsPubliques_() };
+}
+
+function ncImputationsPubliques_() {
+  return Object.keys(NC_IMPUTATIONS).map(function(k) { return { code: k, label: NC_IMPUTATIONS[k] }; });
 }
 
 function ncTypesPublics_() {
@@ -1876,31 +1914,243 @@ function ncLire_(sh, row) {
   return o;
 }
 
-/** Le responsable explique la NC (ou en donne une nouvelle après contestation). */
+/**
+ * Explication d'une NC.
+ *  - Le responsable explique (sous 24 h) ; il peut aussi désigner une autre cause (poste de garde, client…).
+ *  - Le coordinateur peut renseigner l'explication à sa place après enquête (frise des étapes) et,
+ *    si la cause n'est pas le magasin, clôturer directement (cloturer = true).
+ */
 function justifierNonConformite(params) {
   const u = ncUser_(params.acteurEmail);
-  if (["responsable", "coordinateur", "admin"].indexOf(u.ROLE) === -1) throw new Error("Seul le responsable du magasin (ou le coordinateur) peut expliquer une non-conformité");
+  if (["responsable", "coordinateur", "controleur", "admin"].indexOf(u.ROLE) === -1) throw new Error("Seul le responsable du magasin (ou le coordinateur) peut expliquer une non-conformité");
+  const estCoord = u.ROLE !== "responsable";
   const explication = String(params.explication || "").trim();
   if (explication.length < 5) throw new Error("Explication requise (quelques mots au moins)");
+  const imputation = ncImputation_(params.imputation) || "magasin";
+  const horsMagasin = imputation !== "magasin";
+  const cloturer = !!params.cloturer && estCoord;
+  if (cloturer && !horsMagasin) throw new Error("Pour clôturer directement, indique la vraie cause (hors magasin)");
   const lock = LockService.getScriptLock(); lock.waitLock(15000);
   try {
     const c = ncChargerLigne_(params.id);
     const n = ncLire_(c.sh, c.row);
     if (u.ROLE !== "admin" && !ncVisible_(u, n)) throw new Error("Cette non-conformité ne concerne pas votre magasin");
-    if (["ouverte", "contestee"].indexOf(n.STATUT) === -1) throw new Error("Cette non-conformité n'attend pas d'explication");
-    const motifs = Array.isArray(params.motifs) ? params.motifs.join(", ") : String(params.motifs || "");
+    const statutsOk = cloturer ? ["ouverte", "contestee", "expliquee"] : ["ouverte", "contestee"];
+    if (statutsOk.indexOf(n.STATUT) === -1) throw new Error("Cette non-conformité n'attend pas d'explication");
+    let motifs = Array.isArray(params.motifs) ? params.motifs.join(", ") : String(params.motifs || "");
+    if (!motifs && horsMagasin) motifs = "Cause hors magasin : " + NC_IMPUTATIONS[imputation];
     if (n.TYPE === "RETARD" && !motifs) throw new Error("Choisis au moins un motif de retard");
     const ts = now();
-    ncMaj_(c.sh, c.row, {
+    const qui = u.NOM || u.EMAIL;
+    const champs = {
       STATUT: "expliquee", EXPLICATION: explication, EXPLIQUE_PAR: u.EMAIL, EXPLIQUE_LE: ts, MOTIFS: motifs,
-      HISTORIQUE: ncHisto_(n.HISTORIQUE, u.NOM || u.EMAIL, "Explication : " + (motifs ? "[" + motifs + "] " : "") + explication),
-    });
+      IMPUTATION: horsMagasin ? imputation : "",
+    };
+    let histo = ncHisto_(n.HISTORIQUE, qui,
+      (estCoord ? "Enquête du coordinateur : " : "Explication : ") +
+      (horsMagasin ? "cause = " + NC_IMPUTATIONS[imputation] + " — " : "") +
+      (motifs && !/^Cause hors magasin/.test(motifs) ? "[" + motifs + "] " : "") + explication);
+    if (cloturer) {
+      champs.STATUT = "cloturee"; champs.CLOTURE_LE = ts;
+      champs.CONTROLEUR_EMAIL = u.EMAIL; champs.DECISION = "acceptee"; champs.DECISION_LE = ts;
+      champs.CONTROLEUR_COMMENTAIRE = explication;
+      histo = ncHisto_(histo, qui, "Retard non imputable au magasin — clôturée");
+    }
+    champs.HISTORIQUE = histo;
+    ncMaj_(c.sh, c.row, champs);
     // Retard : on alimente aussi les colonnes historiques de l'expédition (KPI, tableau de bord)
     if (n.TYPE === "RETARD" && n.EXP_ID) {
       ncSyncRetardExp_(n.EXP_ID, motifs, explication, u.EMAIL);
+      if (cloturer) ncSyncDecisionRetard_(n, "acceptee", u, explication, ts);
     }
-    return { ok: true };
+    return { ok: true, cloturee: cloturer };
   } finally { lock.releaseLock(); }
+}
+
+/** Cohérence avec le circuit historique des justificatifs (colonnes de l'expédition). */
+function ncSyncDecisionRetard_(n, decision, u, comm, ts) {
+  if (n.TYPE !== "RETARD" || !n.EXP_ID) return;
+  try {
+    if (decision === "acceptee") {
+      updateExpCol(n.EXP_ID, COL_EXP.VALIDATION_CONTROLEUR, "validé");
+      updateExpCol(n.EXP_ID, COL_EXP.CONTROLEUR_EMAIL, u.EMAIL);
+      if (comm) updateExpCol(n.EXP_ID, COL_EXP.COMMENTAIRE_CONTROLEUR, comm);
+      addEvenement(n.EXP_ID, "CTRL_OK", u.EMAIL, u.NOM, ts, "Justificatif validé" + (comm ? " : " + comm : ""));
+    } else {
+      updateExpCol(n.EXP_ID, COL_EXP.VALIDATION_CONTROLEUR, "contredit");
+      updateExpCol(n.EXP_ID, COL_EXP.CONTROLEUR_EMAIL, u.EMAIL);
+      updateExpCol(n.EXP_ID, COL_EXP.COMMENTAIRE_CONTROLEUR, comm);
+      addEvenement(n.EXP_ID, "CTRL_NOK", u.EMAIL, u.NOM, ts, "Justificatif contredit : " + comm);
+    }
+  } catch (e) { console.error("sync retard : " + e.message); }
+}
+
+// ─── Frise d'une livraison : durée de chaque étape ───────────────────────────
+//
+// Reconstitue le déroulé d'une livraison (inscription → entrée → arrivée au magasin → photos → sortie)
+// à partir des horodatages de l'expédition et du journal EVENEMENTS (qui a validé quoi, et quand).
+// Sert au coordinateur à enquêter : où le temps a-t-il été perdu, et chez qui ?
+
+const FRISE_JALONS = {
+  entree: ["ENTREE_SITE", "ENTREE_SHOWROOM", "ENTREE_TRANSFEREE"],
+  magasin: ["SAISIE_CODE"],
+  photos: ["PHOTOS_CHARGEMENT"],
+  sortie: ["SORTIE_SITE", "SORTIE_SHOWROOM"],
+};
+
+function friseMs_(v) {
+  if (!v) return null;
+  const t = (v instanceof Date ? v : new Date(String(v))).getTime();
+  return isNaN(t) ? null : t;
+}
+
+/** Dernier événement d'un des jalons donnés (le plus récent = celui qui fait foi après correction). */
+function friseDernier_(evts, jalons) {
+  for (let i = evts.length - 1; i >= 0; i--) if (jalons.indexOf(evts[i].JALON) !== -1) return evts[i];
+  return null;
+}
+
+function friseConstruire_(exp, cmd, evts, noms) {
+  const showroom = ncCategorieZone_(exp.ZONE) === "showroom";
+  const nomDe = function(email, nomEvt) {
+    const e = String(email || "").toLowerCase();
+    return (nomEvt && nomEvt !== email ? nomEvt : "") || noms[e] || email || "";
+  };
+  const evT0 = evts.filter(function(e) { return e.JALON === "T0"; })[0] || null;
+  const evEntree = friseDernier_(evts, FRISE_JALONS.entree);
+  const evMag = friseDernier_(evts, FRISE_JALONS.magasin);
+  const evPhotos = friseDernier_(evts, FRISE_JALONS.photos);
+  const evSortie = friseDernier_(evts, FRISE_JALONS.sortie);
+
+  const jal = [];
+  const ajoute = function(code, label, ms, ev, emailDef, nomDef, detail) {
+    if (ms === null) return;
+    const email = (ev && ev.ACTEUR_EMAIL) || emailDef || "";
+    jal.push({ code: code, label: label, ms: ms, acteurEmail: email, acteurNom: nomDe(email, (ev && ev.ACTEUR_NOM) || nomDef), detail: detail || "" });
+  };
+  ajoute("inscription", "Commande inscrite", friseMs_(exp.T0) !== null ? friseMs_(exp.T0) : (evT0 ? friseMs_(evT0.TIMESTAMP) : friseMs_(cmd && cmd.T0)),
+    evT0, cmd && cmd.COMMERCIAL_EMAIL, exp.NOM_ACTEUR_COMMERCIAL, "");
+  ajoute("entree", showroom ? "Entrée autorisée (showroom)" : "Entrée autorisée sur le site", friseMs_(exp.T_ENTREE_SITE), evEntree,
+    exp.CHEF_POSTE_EMAIL, exp.NOM_ACTEUR_GARDE, evEntree ? evEntree.COMMENTAIRE : "");
+  ajoute("magasin", "Arrivée validée au magasin", friseMs_(exp.T_CHARGEMENT_FINI), evMag, exp.RESPONSABLE_EMAIL, exp.NOM_ACTEUR_RESPONSABLE, "");
+  if (!showroom && evPhotos) ajoute("photos", "Photos du chargement prises", friseMs_(evPhotos.TIMESTAMP), evPhotos, "", "", evPhotos.COMMENTAIRE);
+  ajoute("sortie", showroom ? "Sortie showroom" : "Sortie du site", friseMs_(exp.T_SORTIE_SITE), evSortie, exp.CHEF_POSTE_EMAIL, exp.NOM_ACTEUR_GARDE, "");
+
+  // Libellés et suspects de chaque tronçon, selon l'étape qu'il termine
+  const poste = showroom ? "showroom" : "garde";
+  const TRONCONS = {
+    entree:  { label: "Attente avant l'entrée", role: showroom ? "agent_showroom" : "chef_poste", suggestions: ["client", poste, "commercial"] },
+    magasin: { label: "De l'entrée à l'arrivée au magasin", role: "responsable", suggestions: ["client", "magasin", poste] },
+    photos:  { label: "Chargement du véhicule", role: "responsable", suggestions: ["magasin", "client"] },
+    sortie:  { label: showroom ? "Remise au client et sortie" : (evPhotos ? "Contrôle et sortie du site" : "Chargement et sortie du site"), role: showroom ? "agent_showroom" : "chef_poste", suggestions: [poste, "magasin", "client"] },
+  };
+  const seq = showroom ? ["entree", "magasin", "sortie"] : ["entree", "magasin", "photos", "sortie"];
+
+  const seg = [];
+  for (let i = 1; i < jal.length; i++) {
+    const fin = jal[i], deb = jal[i - 1], t = TRONCONS[fin.code];
+    if (!t) continue;
+    seg.push({
+      code: fin.code, label: t.label, acteurRole: t.role, acteurNom: fin.acteurNom, acteurEmail: fin.acteurEmail,
+      debut: new Date(deb.ms).toISOString(), fin: new Date(fin.ms).toISOString(),
+      dureeMin: Math.max(0, Math.round((fin.ms - deb.ms) / 60000)), enCours: false, suggestions: t.suggestions,
+    });
+  }
+  const sorti = jal.some(function(j) { return j.code === "sortie"; });
+  const dernierJal = jal.length ? jal[jal.length - 1] : null;
+  const annule = ["annulee", "annule", "supprimee"].indexOf(String(exp.STATUT || "").toLowerCase()) !== -1;
+  if (!sorti && dernierJal && !annule) {
+    // L'étape qui est en train de se dérouler : on la mesure jusqu'à maintenant
+    const idx = seq.indexOf(dernierJal.code === "inscription" ? "" : dernierJal.code);
+    const suivant = seq[idx + 1];
+    if (suivant) {
+      const t = TRONCONS[suivant], nowMs = Date.now();
+      seg.push({
+        code: suivant, label: t.label, acteurRole: t.role, acteurNom: "", acteurEmail: "",
+        debut: new Date(dernierJal.ms).toISOString(), fin: null,
+        dureeMin: Math.max(0, Math.round((nowMs - dernierJal.ms) / 60000)), enCours: true, suggestions: t.suggestions,
+      });
+    }
+  }
+  let plusLongue = "", max = -1;
+  seg.forEach(function(x) { if (x.dureeMin > max) { max = x.dureeMin; plusLongue = x.code; } });
+  const debut = jal.length ? jal[0].ms : null;
+  const finMs = sorti ? jal[jal.length - 1].ms : Date.now();
+  const total = debut !== null ? Math.max(0, Math.round((finMs - debut) / 60000)) : null;
+  return {
+    expId: exp.ID, numCmd: exp.NUM_CMD_NAV_LOCAL || (cmd && cmd.NUM_CMD_NAV) || "", client: (cmd && cmd.NOM_CLIENT) || "",
+    site: (cmd && cmd.SITE) || "", zone: exp.ZONE || "", numExpedition: exp.NUM_EXPEDITION || "",
+    plaque: exp.PLAQUE || "", chauffeur: exp.CHAUFFEUR || "", statut: exp.STATUT || "", showroom: showroom,
+    delaiMaxMin: CONFIG.DELAI_MAX_MIN, totalMin: total, termine: sorti,
+    depasseMin: total !== null ? Math.max(0, total - CONFIG.DELAI_MAX_MIN) : 0,
+    plusLongue: seg.length > 1 ? plusLongue : "",
+    jalons: jal.map(function(j) { return { code: j.code, label: j.label, at: new Date(j.ms).toISOString(), acteurNom: j.acteurNom, acteurEmail: j.acteurEmail, detail: j.detail }; }),
+    segments: seg,
+  };
+}
+
+function friseNoms_() {
+  const noms = {};
+  sheetToObjects(getSheet("UTILISATEURS"), COL_USR).forEach(function(x) { if (x.EMAIL) noms[String(x.EMAIL).toLowerCase()] = x.NOM || ""; });
+  return noms;
+}
+
+function friseAutorise_(u, exp, cmd) {
+  if (["admin", "coordinateur", "controleur", "responsable"].indexOf(u.ROLE) === -1) throw new Error("Accès réservé au coordinateur et aux responsables");
+  const pseudo = { SITE: (cmd && cmd.SITE) || "", ZONE: exp.ZONE, RESPONSABLE_EMAIL: exp.RESPONSABLE_EMAIL };
+  if (!ncVisible_(u, pseudo)) throw new Error("Cette livraison ne concerne pas votre site");
+}
+
+/** Frise détaillée d'une livraison + journal complet des événements. */
+function getFriseExpedition(params) {
+  const u = ncUser_(params.acteurEmail);
+  const expId = String(params.expId || "");
+  if (!expId) throw new Error("expId requis");
+  const exp = sheetToObjects(getSheet("EXPEDITIONS"), COL_EXP).find(function(e) { return e.ID === expId; });
+  if (!exp) throw new Error("Livraison introuvable");
+  const cmd = sheetToObjects(getSheet("COMMANDES"), COL_CMD).find(function(c) { return c.ID === exp.CMD_ID; }) || null;
+  friseAutorise_(u, exp, cmd);
+  const evts = sheetToObjects(getSheet("EVENEMENTS"), COL_EVT).filter(function(e) { return e.EXP_ID === expId; })
+    .sort(function(a, b) { return (friseMs_(a.TIMESTAMP) || 0) - (friseMs_(b.TIMESTAMP) || 0); });
+  const f = friseConstruire_(exp, cmd, evts, friseNoms_());
+  f.evenements = evts.slice(-80).map(function(e) {
+    return { jalon: e.JALON, at: ncIso_(e.TIMESTAMP), acteurNom: e.ACTEUR_NOM || e.ACTEUR_EMAIL || "", acteurEmail: e.ACTEUR_EMAIL || "", commentaire: e.COMMENTAIRE || "" };
+  });
+  return f;
+}
+
+/**
+ * Frises des livraisons récentes visibles par l'appelant (coordinateur / admin) : permet d'enquêter
+ * sur n'importe quelle livraison, même sans non-conformité ouverte.
+ */
+function getFrisesLivraisons(params) {
+  const u = ncUser_(params.acteurEmail);
+  if (["admin", "coordinateur", "controleur"].indexOf(u.ROLE) === -1) throw new Error("Réservé au coordinateur");
+  const depuisMs = params.depuis ? new Date(params.depuis + "T00:00:00").getTime() : Date.now() - 14 * 86400000;
+  const cmds = {};
+  sheetToObjects(getSheet("COMMANDES"), COL_CMD).forEach(function(c) { cmds[c.ID] = c; });
+  const exps = sheetToObjects(getSheet("EXPEDITIONS"), COL_EXP).filter(function(e) {
+    if (!e.ID || e.ARCHIVED_AT) return false;
+    if (e.MODE_LIVRAISON === "interne") return false; // livraisons internes : suivies côté flotte
+    const t0 = friseMs_(e.T0) || friseMs_((cmds[e.CMD_ID] || {}).T0);
+    if (t0 === null || t0 < depuisMs) return false;
+    if (!e.T_ENTREE_SITE && !e.T_SORTIE_SITE && !e.T_CHARGEMENT_FINI) return false; // pas encore démarrée
+    return ncVisible_(u, { SITE: (cmds[e.CMD_ID] || {}).SITE || "", ZONE: e.ZONE, RESPONSABLE_EMAIL: "" });
+  });
+  exps.sort(function(a, b) { return (friseMs_(b.T0) || 0) - (friseMs_(a.T0) || 0); });
+  const retenues = exps.slice(0, 200);
+  const ids = {};
+  retenues.forEach(function(e) { ids[e.ID] = []; });
+  sheetToObjects(getSheet("EVENEMENTS"), COL_EVT).forEach(function(e) { if (ids[e.EXP_ID]) ids[e.EXP_ID].push(e); });
+  const ncParExp = {};
+  ncRead_().forEach(function(n) { if (n.EXP_ID && ids[n.EXP_ID]) (ncParExp[n.EXP_ID] = ncParExp[n.EXP_ID] || []).push({ id: String(n.ID), type: n.TYPE, typeLabel: (NC_TYPES[n.TYPE] || {}).label || n.TYPE, statut: n.STATUT === "contestee" ? "ouverte" : n.STATUT, imputation: ncImputation_(n.IMPUTATION) }); });
+  const noms = friseNoms_();
+  const liste = retenues.map(function(e) {
+    const f = friseConstruire_(e, cmds[e.CMD_ID] || null, ids[e.ID].sort(function(a, b) { return (friseMs_(a.TIMESTAMP) || 0) - (friseMs_(b.TIMESTAMP) || 0); }), noms);
+    f.ncs = ncParExp[e.ID] || [];
+    return f;
+  });
+  return { liste: liste, imputations: Object.keys(NC_IMPUTATIONS).map(function(k) { return { code: k, label: NC_IMPUTATIONS[k] }; }) };
 }
 
 function ncSyncRetardExp_(expId, motifs, commentaire, email) {
@@ -1944,6 +2194,8 @@ function decisionNonConformite(params) {
     if (n.STATUT !== "expliquee") throw new Error("Cette non-conformité n'attend pas de décision");
     const ts = now();
     const base = { CONTROLEUR_EMAIL: u.EMAIL, DECISION: decision, DECISION_LE: ts, CONTROLEUR_COMMENTAIRE: comm };
+    // Le coordinateur peut corriger la cause réelle après enquête (vide ou « magasin » = le magasin est en cause)
+    if (params.imputation !== undefined) base.IMPUTATION = ncImputation_(params.imputation) === "magasin" ? "" : ncImputation_(params.imputation);
     let texte;
     if (decision === "acceptee") {
       Object.assign(base, { STATUT: "cloturee", CLOTURE_LE: ts });
@@ -1954,22 +2206,7 @@ function decisionNonConformite(params) {
     }
     base.HISTORIQUE = ncHisto_(n.HISTORIQUE, u.NOM || u.EMAIL, texte);
     ncMaj_(c.sh, c.row, base);
-    // Cohérence avec le circuit historique des justificatifs
-    if (n.TYPE === "RETARD" && n.EXP_ID) {
-      try {
-        if (decision === "acceptee") {
-          updateExpCol(n.EXP_ID, COL_EXP.VALIDATION_CONTROLEUR, "validé");
-          updateExpCol(n.EXP_ID, COL_EXP.CONTROLEUR_EMAIL, u.EMAIL);
-          if (comm) updateExpCol(n.EXP_ID, COL_EXP.COMMENTAIRE_CONTROLEUR, comm);
-          addEvenement(n.EXP_ID, "CTRL_OK", u.EMAIL, u.NOM, ts, "Justificatif validé" + (comm ? " : " + comm : ""));
-        } else {
-          updateExpCol(n.EXP_ID, COL_EXP.VALIDATION_CONTROLEUR, "contredit");
-          updateExpCol(n.EXP_ID, COL_EXP.CONTROLEUR_EMAIL, u.EMAIL);
-          updateExpCol(n.EXP_ID, COL_EXP.COMMENTAIRE_CONTROLEUR, comm);
-          addEvenement(n.EXP_ID, "CTRL_NOK", u.EMAIL, u.NOM, ts, "Justificatif contredit : " + comm);
-        }
-      } catch (e) { console.error("sync retard : " + e.message); }
-    }
+    ncSyncDecisionRetard_(n, decision, u, comm, ts);
     if (decision !== "acceptee") ncNotifierDecision_(n, decision, comm, action, echeance, u);
     return { ok: true };
   } finally { lock.releaseLock(); }

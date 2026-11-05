@@ -1,12 +1,13 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle, ArrowRight, BarChart3, CheckCircle2, ChevronDown, Download, Flag, Plus, RefreshCw, Search, Wrench,
+  AlertTriangle, ArrowRight, BarChart3, CheckCircle2, ChevronDown, Download, Flag, GanttChartSquare, Plus, RefreshCw, Search, Wrench,
 } from "lucide-react";
 import {
   api,
-  type NcDecision, type NcStatut, type NonConformite,
+  type FriseLivraison as FriseData, type NcDecision, type NcStatut, type NonConformite,
 } from "@/api/appsScript";
+import { FriseLivraison, FriseMini, IMPUTATION_COURT } from "@/components/FriseLivraison";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/Toast";
 import { Modal } from "@/components/Modal";
@@ -15,13 +16,18 @@ import { PhotoCapture } from "@/components/PhotoCapture";
 import { MAGASINS } from "@/types/magasins";
 import { PeriodeSelect, SiteMagasinSelect } from "@/components/FiltresPortee";
 import { dansPeriode, periodeDepuisPreset, type Periode } from "@/lib/periode";
-import { memeMagasin, porteeDe } from "@/lib/portee";
-import { formatDateTime, formatRelative } from "@/lib/format";
+import { memeMagasin, type Portee } from "@/lib/portee";
+import { formatDateTime, formatDuree, formatRelative } from "@/lib/format";
 import { cn, includesLower } from "@/lib/cn";
 import { useVues, type Vue } from "@/lib/vues";
 
 /** Les vues se répartissent selon « qui doit agir » : c'est la question que tout le monde se pose. */
-type Onglet = "atraiter" | "autres" | "cloturees" | "chiffres";
+type Onglet = "atraiter" | "autres" | "cloturees" | "livraisons" | "chiffres";
+type OngletNc = Exclude<Onglet, "livraisons" | "chiffres">;
+
+/** Le serveur filtre déjà ce que chacun a le droit de voir : l'écran ne doit jamais masquer davantage. */
+const PORTEE_LIBRE: Portee = { siteFixe: null, zoneFixe: null };
+const CAUSES = ["magasin", "garde", "showroom", "commercial", "client", "autre"] as const;
 
 type Acteur = "responsable" | "coordinateur";
 
@@ -71,7 +77,7 @@ function prochaineEtape(n: NonConformite): string {
  *  - autres   : quelqu'un d'autre doit agir
  *  - cloturees: terminé
  */
-function vueDe(n: NonConformite, role: string): Exclude<Onglet, "chiffres"> {
+function vueDe(n: NonConformite, role: string): OngletNc {
   const acteur = acteurDe(n);
   if (!acteur) return "cloturees";
   if (role === "responsable") return acteur === "responsable" ? "atraiter" : "autres";
@@ -127,12 +133,9 @@ export default function NonConformitesMagasinPage() {
 
   const [recherche, setRecherche] = useState("");
   const [type, setType] = useState("");
-  const portee = useMemo(() => porteeDe(user), [user]);
-  const [siteChoisi, setSite] = useState("");
-  const [zoneChoisie, setZone] = useState("");
-  // Les droits priment toujours sur le choix affiché
-  const site = portee.siteFixe ?? siteChoisi;
-  const zone = portee.zoneFixe ?? zoneChoisie;
+  const portee = PORTEE_LIBRE;
+  const [site, setSite] = useState("");
+  const [zone, setZone] = useState("");
   const [periode, setPeriode] = useState<Periode>(() => periodeDepuisPreset("90"));
   const [ouvert, setOuvert] = useState<string | null>(null);
   const [nouveau, setNouveau] = useState(false);
@@ -154,7 +157,8 @@ export default function NonConformitesMagasinPage() {
         if (type && n.type !== type) return false;
         if (site && n.site !== site) return false;
         if (zone && !memeMagasin(n.zone, zone)) return false;
-        if (!dansPeriode(n.creeLe, periode)) return false;
+        // La période ne concerne que l'historique : une non-conformité encore ouverte reste toujours visible
+        if (n.statut === "cloturee" && !dansPeriode(n.creeLe, periode)) return false;
         if (recherche.trim()) {
           const r = recherche.trim();
           if (![n.numCmd, n.client, n.zone, n.detail, n.typeLabel, n.responsableEmail].some((c) => includesLower(c, r))) return false;
@@ -165,7 +169,7 @@ export default function NonConformitesMagasinPage() {
   );
 
   const parOnglet = useMemo(() => {
-    const o: Record<Exclude<Onglet, "chiffres">, NonConformite[]> = { atraiter: [], autres: [], cloturees: [] };
+    const o: Record<OngletNc, NonConformite[]> = { atraiter: [], autres: [], cloturees: [] };
     filtrees.forEach((n) => o[vueDe(n, role)].push(n));
     // Les plus urgentes d'abord : en retard, puis les plus anciennes
     const urgence = (n: NonConformite) => (n.enRetardJustif || n.enRetardAction ? 0 : 1);
@@ -181,12 +185,17 @@ export default function NonConformitesMagasinPage() {
     [toutes, filtrees],
   );
   const fiche = ouvert ? toutes.find((n) => n.id === ouvert) ?? null : null;
+  const ncParExp = useMemo(() => {
+    const m = new Map<string, NonConformite[]>();
+    toutes.forEach((n) => { if (n.expId) m.set(n.expId, [...(m.get(n.expId) ?? []), n]); });
+    return m;
+  }, [toutes]);
 
   const onglets: (Vue & { key: Onglet })[] = [
     { key: "atraiter", label: "À traiter", n: parOnglet.atraiter.length, alerte: parOnglet.atraiter.some((x) => x.enRetardJustif || x.enRetardAction) },
     { key: "autres", label: "En attente des autres", n: parOnglet.autres.length },
     { key: "cloturees", label: "Clôturées", n: parOnglet.cloturees.length },
-    ...(estControleur ? [{ key: "chiffres" as Onglet, label: "Chiffres" }] : []),
+    ...(estControleur ? [{ key: "livraisons" as Onglet, label: "Livraisons (frise)" }, { key: "chiffres" as Onglet, label: "Chiffres" }] : []),
   ];
   const [onglet, setOnglet] = useVues<Onglet>("/non-conformites", onglets, "atraiter");
 
@@ -202,7 +211,7 @@ export default function NonConformitesMagasinPage() {
   }
 
 
-  const liste = onglet === "chiffres" ? [] : parOnglet[onglet];
+  const liste = onglet === "chiffres" || onglet === "livraisons" ? [] : parOnglet[onglet];
 
   return (
     <div className="h-full flex flex-col">
@@ -269,6 +278,7 @@ export default function NonConformitesMagasinPage() {
               )}
             >
               {o.key === "chiffres" && <BarChart3 className="h-4 w-4" />}
+              {o.key === "livraisons" && <GanttChartSquare className="h-4 w-4" />}
               {o.label}
               {o.n !== undefined && (
                 <span className={cn("num text-xs rounded-full px-1.5 py-0.5", o.alerte ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-600")}>
@@ -281,18 +291,29 @@ export default function NonConformitesMagasinPage() {
       </PageHeader>
 
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-        {onglet !== "chiffres" && <GuideParcours />}
-        {masquees > 0 && (
+        {onglet !== "chiffres" && onglet !== "livraisons" && <GuideParcours />}
+        {onglet !== "livraisons" && masquees > 0 && (
           <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            {masquees} non-conformité(s) encore ouverte(s) sont masquées par les filtres (période, site, magasin ou type).
+            {masquees} non-conformité(s) encore ouverte(s) sont masquées par vos filtres (recherche, type, site ou magasin).
           </div>
         )}
-        {q.isLoading ? (
+        {onglet !== "livraisons" && q.isLoading ? (
           <div className="card p-6 text-center text-sm text-slate-500">Chargement…</div>
-        ) : q.error ? (
+        ) : onglet !== "livraisons" && q.error ? (
           <div className="card p-6 border-red-200 bg-red-50 text-sm text-red-700">
             {q.error instanceof Error ? q.error.message : "Erreur"}
           </div>
+        ) : onglet === "livraisons" ? (
+          <Livraisons
+            email={email}
+            depuis={depuis}
+            recherche={recherche}
+            site={site}
+            zone={zone}
+            periode={periode}
+            ncParExp={ncParExp}
+            onOuvrirNc={(id) => setOuvert(id)}
+          />
         ) : onglet === "chiffres" ? (
           <Suivi liste={filtrees} periode={periode} />
         ) : liste.length === 0 ? (
@@ -423,6 +444,20 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
   const [action, setAction] = useState("");
   const [echeance, setEcheance] = useState(isoJour(new Date(Date.now() + 7 * 86400000)));
   const [fait, setFait] = useState("");
+  // Cause réelle du retard : par défaut le magasin ; le coordinateur la corrige après avoir regardé la frise
+  const [imputation, setImputation] = useState<string>(n.imputation || "magasin");
+  const [cloturer, setCloturer] = useState(true);
+  const horsMagasin = imputation !== "magasin";
+  const avecCause = n.type === "RETARD" || n.type === "ATTENTE";
+  const peutVoirFrise = !!n.expId && (user?.role === "responsable" || estControleur);
+
+  const { data: frise } = useQuery({
+    queryKey: ["frise", n.expId, email],
+    queryFn: () => api.nonConformites.frise(email, n.expId as string),
+    enabled: peutVoirFrise,
+    refetchInterval: 60_000,
+    retry: false,
+  });
 
   const { data: motifsRef = [] } = useQuery({
     queryKey: ["motifs-retard"],
@@ -444,8 +479,13 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
   const echec = (e: unknown) => toast.error(e instanceof Error ? e.message : "Erreur");
 
   const mExpliquer = useMutation({
-    mutationFn: () => api.nonConformites.justifier({ id: n.id, acteurEmail: email, explication: explication.trim(), motifs: Array.from(motifs) }),
-    onSuccess: () => fin("Explication envoyée au coordinateur"),
+    mutationFn: () =>
+      api.nonConformites.justifier({
+        id: n.id, acteurEmail: email, explication: explication.trim(), motifs: Array.from(motifs),
+        imputation: avecCause ? imputation : undefined,
+        cloturer: estControleur && horsMagasin && cloturer,
+      }),
+    onSuccess: (r) => fin(r.cloturee ? "Enregistré — retard non imputable au magasin, clôturée" : estControleur ? "Explication enregistrée" : "Explication envoyée au coordinateur"),
     onError: echec,
   });
   const mDecider = useMutation({
@@ -453,6 +493,7 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
       api.nonConformites.decider({
         id: n.id, acteurEmail: email, decision: decision as NcDecision, commentaire: commentaire.trim(),
         action: action.trim(), echeance,
+        imputation: avecCause ? imputation : undefined,
       }),
     onSuccess: () =>
       fin(decision === "acceptee" ? "Explication acceptée — clôturée" : "Non-conformité confirmée — l'action corrective est demandée"),
@@ -466,7 +507,7 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
 
   function envoyerExplication(e: FormEvent) {
     e.preventDefault();
-    if (n.type === "RETARD" && motifs.size === 0) return toast.error("Choisis au moins un motif.");
+    if (n.type === "RETARD" && motifs.size === 0 && !horsMagasin) return toast.error("Choisis au moins un motif.");
     if (explication.trim().length < 5) return toast.error("Explique brièvement ce qui s'est passé.");
     mExpliquer.mutate();
   }
@@ -522,6 +563,28 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
           </div>
         )}
 
+        {peutVoirFrise && frise && (
+          <section className="rounded-lg border border-line p-3 space-y-2">
+            <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-1.5">
+              <GanttChartSquare className="h-4 w-4 text-slate-500" />Où est passé le temps ?
+            </h3>
+            <FriseLivraison
+              f={frise}
+              onImputer={(peutExpliquer || peutDecider) && avecCause ? setImputation : undefined}
+              imputationActive={imputation}
+            />
+            <Journal f={frise} />
+          </section>
+        )}
+
+        {n.imputation && (
+          <div className="rounded-lg bg-sky-50 border border-sky-200 p-3 text-sm text-sky-900">
+            <span className="text-xs font-medium block">Cause identifiée</span>
+            {n.imputationLabel}
+            <span className="block text-xs text-sky-700">Ce retard n'est pas imputé au magasin.</span>
+          </div>
+        )}
+
         {photos.length > 0 && (
           <div className="flex gap-2 flex-wrap">
             {photos.map((p) => (
@@ -549,8 +612,14 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
 
         {peutExpliquer && (
           <form onSubmit={envoyerExplication} className="space-y-3 border-t border-line pt-4">
-            <h3 className="text-sm font-semibold text-slate-900">Ton explication</h3>
-            {n.type === "RETARD" && (
+            <h3 className="text-sm font-semibold text-slate-900">{estControleur ? "Votre enquête" : "Ton explication"}</h3>
+            {estControleur && (
+              <p className="text-xs text-slate-500 -mt-1">
+                Regardez la frise ci-dessus : si le retard ne vient pas du magasin, indiquez la vraie cause. Vous pouvez saisir le justificatif à la place du responsable.
+              </p>
+            )}
+            {avecCause && <SelecteurCause valeur={imputation} onChange={setImputation} titre={estControleur ? "À qui est dû le retard ?" : "Le retard vient-il de quelqu'un d'autre ?"} />}
+            {n.type === "RETARD" && !horsMagasin && (
               <div className="flex flex-wrap gap-1.5">
                 {motifsRef.map((mot) => {
                   const sel = motifs.has(mot.libelle);
@@ -570,9 +639,15 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
                 })}
               </div>
             )}
-            <textarea className="input min-h-[90px]" placeholder="Que s'est-il passé ? Qu'est-ce qui sera fait pour que cela ne se reproduise pas ?" value={explication} onChange={(e) => setExplication(e.target.value)} />
+            <textarea className="input min-h-[90px]" placeholder={horsMagasin ? "Que s'est-il passé ? Décrivez ce qui a retardé la livraison." : "Que s'est-il passé ? Qu'est-ce qui sera fait pour que cela ne se reproduise pas ?"} value={explication} onChange={(e) => setExplication(e.target.value)} />
+            {estControleur && horsMagasin && (
+              <label className="flex items-start gap-2 text-sm text-slate-700">
+                <input type="checkbox" className="mt-1" checked={cloturer} onChange={(e) => setCloturer(e.target.checked)} />
+                <span>Clôturer directement : ce retard n'est pas imputable au magasin ({IMPUTATION_COURT[imputation]})</span>
+              </label>
+            )}
             <button className="btn-primary w-full" disabled={mExpliquer.isPending}>
-              {mExpliquer.isPending ? "Envoi…" : "Envoyer au coordinateur"}
+              {mExpliquer.isPending ? "Envoi…" : estControleur ? (horsMagasin && cloturer ? "Enregistrer et clôturer" : "Enregistrer l'explication") : "Envoyer au coordinateur"}
             </button>
           </form>
         )}
@@ -580,6 +655,7 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
         {peutDecider && (
           <form onSubmit={envoyerDecision} className="space-y-3 border-t border-line pt-4">
             <h3 className="text-sm font-semibold text-slate-900">Votre décision</h3>
+            {avecCause && <SelecteurCause valeur={imputation} onChange={setImputation} titre="Cause réelle du retard (après enquête)" />}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <ChoixDecision actif={decision === "acceptee"} onClick={() => setDecision("acceptee")} icone={<CheckCircle2 className="h-4 w-4" />} titre="Accepter l'explication" sous="C'est recevable : la non-conformité est clôturée" couleur="emerald" />
               <ChoixDecision actif={decision === "confirmee"} onClick={() => setDecision("confirmee")} icone={<Wrench className="h-4 w-4" />} titre="Confirmer la non-conformité" sous="C'est avéré : on demande une action corrective" couleur="red" />
@@ -633,6 +709,227 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
             </ol>
           </div>
         )}
+      </div>
+    </Modal>
+  );
+}
+
+/** « À qui est dû le retard ? » — le magasin par défaut, ou un autre acteur de la chaîne. */
+function SelecteurCause({ valeur, onChange, titre }: { valeur: string; onChange: (v: string) => void; titre: string }) {
+  return (
+    <div>
+      <div className="label">{titre}</div>
+      <div className="flex flex-wrap gap-1.5">
+        {CAUSES.map((c) => (
+          <button
+            key={c}
+            type="button"
+            onClick={() => onChange(c)}
+            className={cn(
+              "px-2.5 py-1.5 rounded-full text-xs font-medium border transition-colors",
+              valeur === c ? (c === "magasin" ? "bg-brand-900 text-white border-brand-900" : "bg-sky-700 text-white border-sky-700") : "bg-white text-slate-700 border-slate-200 hover:border-slate-300",
+            )}
+          >
+            {IMPUTATION_COURT[c]}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const JALON_LABEL: Record<string, string> = {
+  T0: "Commande inscrite", ENTREE_SITE: "Entrée sur le site", ENTREE_SHOWROOM: "Entrée showroom",
+  ENTREE_TRANSFEREE: "Entrée déplacée", ENTREE_CORRIGEE: "Entrée corrigée", SAISIE_CODE: "Arrivée validée au magasin",
+  PHOTOS_CHARGEMENT: "Photos du chargement", SORTIE_SITE: "Sortie du site", SORTIE_SHOWROOM: "Sortie showroom",
+  PLAQUE_DIFFERENTE: "Plaque différente", ALERTE_VALIDATION_RAPIDE: "Validation très rapide", DEROGATION_PHOTOS: "Dérogation photos",
+  ETAPE_ANNULEE: "Étape annulée", NC_OUVERTE: "Non-conformité ouverte", JUSTIF: "Justification", CTRL_OK: "Justificatif validé",
+  CTRL_NOK: "Justificatif contredit", CODE_FAIL: "Code incorrect", CHARGEMENT_PARTIEL: "Chargement partiel",
+};
+
+/** Journal complet des événements de la livraison (replié par défaut). */
+function Journal({ f }: { f: FriseData }) {
+  const evts = f.evenements ?? [];
+  if (!evts.length) return null;
+  return (
+    <details className="text-xs">
+      <summary className="cursor-pointer text-slate-500 hover:text-slate-800">Journal détaillé ({evts.length} événements)</summary>
+      <ol className="mt-2 space-y-1.5">
+        {evts.map((e, i) => (
+          <li key={i} className="flex gap-2 text-slate-600">
+            <span className="num text-slate-400 shrink-0 w-28 whitespace-nowrap">{formatDateTime(e.at)}</span>
+            <span>
+              <span className="font-medium text-slate-800">{JALON_LABEL[e.jalon] ?? e.jalon}</span>
+              {e.acteurNom && <> — {e.acteurNom}</>}
+              {e.commentaire && <span className="text-slate-500"> · {e.commentaire}</span>}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
+// ─── Livraisons : la frise de chaque livraison (coordinateur) ───────────────
+
+type FiltreLivraison = "depassements" | "toutes" | "encours";
+
+function Livraisons({
+  email, depuis, recherche, site, zone, periode, ncParExp, onOuvrirNc,
+}: {
+  email: string; depuis: string; recherche: string; site: string; zone: string; periode: Periode;
+  ncParExp: Map<string, NonConformite[]>; onOuvrirNc: (id: string) => void;
+}) {
+  const [filtre, setFiltre] = useState<FiltreLivraison>("depassements");
+  const [ouverte, setOuverte] = useState<string | null>(null);
+  const q = useQuery({
+    queryKey: ["frises", email, depuis],
+    queryFn: () => api.nonConformites.frises(email, depuis),
+    enabled: !!email,
+    refetchInterval: 60_000,
+  });
+  const toutes = useMemo(() => q.data?.liste ?? [], [q.data]);
+  const base = useMemo(
+    () =>
+      toutes.filter((f) => {
+        if (site && f.site !== site) return false;
+        if (zone && !memeMagasin(f.zone, zone)) return false;
+        if (f.jalons[0] && !dansPeriode(f.jalons[0].at, periode)) return false;
+        if (recherche.trim()) {
+          const r = recherche.trim();
+          if (![f.numCmd, f.client, f.zone, f.plaque, f.chauffeur, f.numExpedition].some((c) => includesLower(c, r))) return false;
+        }
+        return true;
+      }),
+    [toutes, site, zone, periode, recherche],
+  );
+  const nDep = base.filter((f) => (f.totalMin ?? 0) > f.delaiMaxMin).length;
+  const nCours = base.filter((f) => !f.termine).length;
+  const liste = base.filter((f) =>
+    filtre === "depassements" ? (f.totalMin ?? 0) > f.delaiMaxMin : filtre === "encours" ? !f.termine : true,
+  );
+  const choisie = ouverte ? toutes.find((f) => f.expId === ouverte) ?? null : null;
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900 flex gap-2">
+        <GanttChartSquare className="h-4 w-4 shrink-0 mt-0.5" />
+        <span>
+          Chaque livraison est décomposée en étapes : on voit combien de temps chacune a duré et qui l'a validée.
+          Ouvrez une livraison pour enquêter, puis indiquez la vraie cause du retard si elle ne vient pas du magasin.
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {([
+          ["depassements", `Au-delà du seuil (${nDep})`],
+          ["encours", `En cours (${nCours})`],
+          ["toutes", `Toutes (${base.length})`],
+        ] as [FiltreLivraison, string][]).map(([k, l]) => (
+          <button
+            key={k}
+            onClick={() => setFiltre(k)}
+            className={cn("px-3 py-1.5 rounded-full text-xs font-medium border transition-colors", filtre === k ? "bg-brand-900 text-white border-brand-900" : "bg-white text-slate-700 border-slate-200 hover:border-slate-300")}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {q.isLoading ? (
+        <div className="card p-6 text-center text-sm text-slate-500">Chargement des livraisons…</div>
+      ) : q.error ? (
+        <div className="card p-6 border-red-200 bg-red-50 text-sm text-red-700">
+          {q.error instanceof Error ? q.error.message : "Erreur"}
+          <div className="text-xs mt-1">Si le message parle d'une action inconnue, la dernière version du script n'est pas encore déployée.</div>
+        </div>
+      ) : liste.length === 0 ? (
+        <div className="card p-10 text-center text-sm text-slate-500">
+          <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-emerald-500" />
+          {filtre === "depassements" ? "Aucune livraison au-delà du seuil sur la période." : "Aucune livraison."}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {liste.map((f) => {
+            const dep = (f.totalMin ?? 0) > f.delaiMaxMin;
+            return (
+              <button
+                key={f.expId}
+                onClick={() => setOuverte(f.expId)}
+                className="card w-full text-left p-3 hover:border-brand-300 transition-colors grid gap-3 sm:grid-cols-[1fr_minmax(220px,300px)] items-center"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="font-semibold text-slate-900 truncate">{f.numCmd || f.numExpedition || "Sans n°"}</span>
+                    {f.client && <span className="text-sm text-slate-600 truncate">· {f.client}</span>}
+                    {dep && <span className="badge-danger">+{formatDuree(f.depasseMin)}</span>}
+                    {(f.ncs ?? []).map((n) => (
+                      <span key={n.id} className={STATUT_BADGE[n.statut]}>{n.typeLabel}{n.imputation ? ` · ${IMPUTATION_COURT[n.imputation] ?? ""}` : ""}</span>
+                    ))}
+                  </div>
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    {[f.zone, f.site].filter(Boolean).join(" — ")}
+                    {f.jalons[0] && <> · {formatDateTime(f.jalons[0].at)}</>}
+                    {f.plaque && <> · {f.plaque}</>}
+                  </div>
+                </div>
+                <FriseMini f={f} />
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {choisie && (
+        <FicheLivraison
+          f={choisie}
+          email={email}
+          ncs={ncParExp.get(choisie.expId) ?? []}
+          onClose={() => setOuverte(null)}
+          onOuvrirNc={(id) => { setOuverte(null); onOuvrirNc(id); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function FicheLivraison({
+  f, email, ncs, onClose, onOuvrirNc,
+}: { f: FriseData; email: string; ncs: NonConformite[]; onClose: () => void; onOuvrirNc: (id: string) => void }) {
+  const { data } = useQuery({
+    queryKey: ["frise", f.expId, email],
+    queryFn: () => api.nonConformites.frise(email, f.expId),
+    refetchInterval: 60_000,
+    retry: false,
+  });
+  const detail = data ?? f;
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Livraison ${f.numCmd || f.numExpedition || ""}`}
+      description={[f.client, f.zone, f.site, f.plaque, f.chauffeur].filter(Boolean).join(" · ")}
+      size="lg"
+    >
+      <div className="space-y-4">
+        <FriseLivraison f={detail} />
+        <Journal f={detail} />
+        <div className="border-t border-line pt-3 space-y-2">
+          <h3 className="text-sm font-semibold text-slate-900">Non-conformités liées</h3>
+          {ncs.length === 0 ? (
+            <p className="text-sm text-slate-500">Aucune non-conformité pour cette livraison.</p>
+          ) : (
+            ncs.map((n) => (
+              <button key={n.id} onClick={() => onOuvrirNc(n.id)} className="w-full text-left rounded-lg border border-line p-2.5 hover:border-brand-300 flex items-center justify-between gap-2">
+                <span className="text-sm text-slate-800">{n.typeLabel}{n.imputationLabel ? ` — cause : ${n.imputationLabel}` : ""}</span>
+                <span className="flex items-center gap-2 shrink-0">
+                  <span className={STATUT_BADGE[n.statut]}>{STATUT_LABEL[n.statut]}</span>
+                  <ArrowRight className="h-4 w-4 text-slate-400" />
+                </span>
+              </button>
+            ))
+          )}
+          <p className="text-xs text-slate-500">Ouvrez la non-conformité pour indiquer la cause du retard et saisir le justificatif.</p>
+        </div>
       </div>
     </Modal>
   );
