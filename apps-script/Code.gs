@@ -33,6 +33,7 @@ const CONFIG = {
   CHAT_WEBHOOK:   "https://chat.googleapis.com/v1/spaces/AAQAXESvaoE/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=jl7L1GzEQDx7K-Pv9yXEYQTelyDIwFR4rrehMIaJnqk",
   EMAIL_ADMIN:    "Fadell.bazzouni@dmcsen.com",
   DELAI_MAX_MIN:  30,   // seuil retard en minutes
+  GARDE_SORTIE_MAX_MIN: 10, // poste de garde : « contrôle et sortie » (dernière photo → sortie) attendu en moins de N minutes
   // ── Photos de chargement (Google Drive) ──
   // Le responsable magasin photographie le véhicule chargé AVANT le poste de garde.
   // Les photos vont dans Drive : <racine> / aaaa-mm / <N° commande> - <client> - <N° expédition>
@@ -1918,8 +1919,9 @@ function ncLire_(sh, row) {
 /**
  * Explication d'une NC.
  *  - Le responsable explique (sous 24 h) ; il peut aussi désigner une autre cause (poste de garde, client…).
- *  - Le coordinateur peut renseigner l'explication à sa place après enquête (frise des étapes) et,
- *    si la cause n'est pas le magasin, clôturer directement (cloturer = true).
+ *  - Le coordinateur peut renseigner l'explication à sa place après enquête (frise des étapes) ;
+ *    la NC passe alors « en attente de décision » et il la valide ensuite par une décision explicite
+ *    (jamais de clôture automatique : toute clôture passe par decisionNonConformite).
  */
 function justifierNonConformite(params) {
   const u = ncUser_(params.acteurEmail);
@@ -1929,15 +1931,12 @@ function justifierNonConformite(params) {
   if (explication.length < 5) throw new Error("Explication requise (quelques mots au moins)");
   const imputation = ncImputation_(params.imputation) || "magasin";
   const horsMagasin = imputation !== "magasin";
-  const cloturer = !!params.cloturer && estCoord;
-  if (cloturer && !horsMagasin) throw new Error("Pour clôturer directement, indique la vraie cause (hors magasin)");
   const lock = LockService.getScriptLock(); lock.waitLock(15000);
   try {
     const c = ncChargerLigne_(params.id);
     const n = ncLire_(c.sh, c.row);
     if (u.ROLE !== "admin" && !ncVisible_(u, n)) throw new Error("Cette non-conformité ne concerne pas votre magasin");
-    const statutsOk = cloturer ? ["ouverte", "contestee", "expliquee"] : ["ouverte", "contestee"];
-    if (statutsOk.indexOf(n.STATUT) === -1) throw new Error("Cette non-conformité n'attend pas d'explication");
+    if (["ouverte", "contestee"].indexOf(n.STATUT) === -1) throw new Error("Cette non-conformité n'attend pas d'explication");
     let motifs = Array.isArray(params.motifs) ? params.motifs.join(", ") : String(params.motifs || "");
     if (!motifs && horsMagasin) motifs = "Cause hors magasin : " + NC_IMPUTATIONS[imputation];
     if (n.TYPE === "RETARD" && !motifs) throw new Error("Choisis au moins un motif de retard");
@@ -1947,24 +1946,17 @@ function justifierNonConformite(params) {
       STATUT: "expliquee", EXPLICATION: explication, EXPLIQUE_PAR: u.EMAIL, EXPLIQUE_LE: ts, MOTIFS: motifs,
       IMPUTATION: horsMagasin ? imputation : "",
     };
-    let histo = ncHisto_(n.HISTORIQUE, qui,
+    const histo = ncHisto_(n.HISTORIQUE, qui,
       (estCoord ? "Enquête du coordinateur : " : "Explication : ") +
       (horsMagasin ? "cause = " + NC_IMPUTATIONS[imputation] + " — " : "") +
       (motifs && !/^Cause hors magasin/.test(motifs) ? "[" + motifs + "] " : "") + explication);
-    if (cloturer) {
-      champs.STATUT = "cloturee"; champs.CLOTURE_LE = ts;
-      champs.CONTROLEUR_EMAIL = u.EMAIL; champs.DECISION = "acceptee"; champs.DECISION_LE = ts;
-      champs.CONTROLEUR_COMMENTAIRE = explication;
-      histo = ncHisto_(histo, qui, "Retard non imputable au magasin — clôturée");
-    }
     champs.HISTORIQUE = histo;
     ncMaj_(c.sh, c.row, champs);
     // Retard : on alimente aussi les colonnes historiques de l'expédition (KPI, tableau de bord)
     if (n.TYPE === "RETARD" && n.EXP_ID) {
       ncSyncRetardExp_(n.EXP_ID, motifs, explication, u.EMAIL);
-      if (cloturer) ncSyncDecisionRetard_(n, "acceptee", u, explication, ts);
     }
-    return { ok: true, cloturee: cloturer };
+    return { ok: true };
   } finally { lock.releaseLock(); }
 }
 
@@ -3819,19 +3811,69 @@ function getKpi(params) {
     }
   });
 
+  // ── Causes validées par le coordinateur ─────────────────────────────────────
+  // Une cause hors magasin ne compte contre le magasin que si le coordinateur a ACCEPTÉ l'explication ;
+  // elle est alors portée au compte de l'acteur en cause (poste de garde…).
+  const idsExp = {};
+  exps.forEach(e => { idsExp[e.ID] = true; });
+  const ncsExp = ncRead_().filter(n => n.EXP_ID && idsExp[n.EXP_ID]);
+  const excuses = {};      // expId → imputation validée (garde, showroom, client…)
+  const sansPhotos = {};   // expId → sortie sans photos (dérogation du poste de garde)
+  const causes = {};       // imputation → nombre de retards/attentes expliqués
+  ncsExp.forEach(n => {
+    const imp = ncImputation_(n.IMPUTATION) || "magasin";
+    if (n.TYPE === "SORTIE_SANS_PHOTOS") sansPhotos[n.EXP_ID] = true;
+    if ((n.TYPE === "RETARD" || n.TYPE === "ATTENTE") && n.DECISION) {
+      causes[imp] = (causes[imp] || 0) + 1;
+      if (n.DECISION === "acceptee" && imp !== "magasin") excuses[n.EXP_ID] = imp;
+    }
+  });
+  const parCause = Object.keys(causes).map(k => ({ cause: k, label: k === "magasin" ? "Le magasin" : (NC_IMPUTATIONS[k] || k), count: causes[k] }))
+    .sort((a, b) => b.count - a.count);
+
   // ── Classement par responsable (Bug #1 fix : T3 → T_SORTIE_SITE) ───────────
-  // On groupe les expéditions terminées par l'email du responsable
+  // On groupe les expéditions terminées par l'email du responsable.
+  // Un retard dont la cause validée n'est pas le magasin n'est pas compté contre lui.
   const parResp = {};
   avecSortie.forEach(e => {
     const email = (e.RESPONSABLE_EMAIL || "").toLowerCase();
     if (!email) return;
-    if (!parResp[email]) parResp[email] = { email, total: 0, sous30: 0, durees: [] };
+    if (!parResp[email]) parResp[email] = { email, total: 0, sous30: 0, excuses: 0, durees: [] };
     const d = dureeMin(e.T0, e.T_SORTIE_SITE);
     parResp[email].total++;
     if (d !== null) {
       parResp[email].durees.push(d);
       if (d <= 30) parResp[email].sous30++;
+      else if (excuses[e.ID]) { parResp[email].sous30++; parResp[email].excuses++; }
     }
+  });
+
+  // ── Notation du poste de garde / agent showroom ─────────────────────────────
+  // Une livraison est « en faute » pour le poste si : la sortie a pris trop de temps après les photos,
+  // ou une sortie sans photos a eu lieu, ou un retard lui a été imputé (et validé par le coordinateur).
+  const dernierePhoto = {};
+  sheetToObjects(getSheet("EVENEMENTS"), COL_EVT).forEach(ev => {
+    if (ev.JALON === "PHOTOS_CHARGEMENT" && idsExp[ev.EXP_ID]) {
+      const t = friseMs_(ev.TIMESTAMP);
+      if (t !== null && (!dernierePhoto[ev.EXP_ID] || t > dernierePhoto[ev.EXP_ID])) dernierePhoto[ev.EXP_ID] = t;
+    }
+  });
+  const parGarde = {};
+  avecSortie.forEach(e => {
+    const email = String(e.CHEF_POSTE_EMAIL || "").toLowerCase();
+    if (!email) return;
+    const g = parGarde[email] || (parGarde[email] = { email, total: 0, fautes: 0, sortiesLentes: 0, derogations: 0, ncImputees: 0, sorties: [] });
+    g.total++;
+    let faute = false;
+    const tp = dernierePhoto[e.ID], ts = friseMs_(e.T_SORTIE_SITE);
+    if (tp && ts && ts >= tp) {
+      const m = Math.round((ts - tp) / 60000);
+      g.sorties.push(m);
+      if (m > CONFIG.GARDE_SORTIE_MAX_MIN) { g.sortiesLentes++; faute = true; }
+    }
+    if (sansPhotos[e.ID]) { g.derogations++; faute = true; }
+    if (excuses[e.ID] === "garde" || excuses[e.ID] === "showroom") { g.ncImputees++; faute = true; }
+    if (faute) g.fautes++;
   });
 
   // Récupérer les noms depuis UTILISATEURS
@@ -3847,6 +3889,7 @@ function getKpi(params) {
       total: r.total,
       sous30: r.sous30,
       taux: r.total ? Math.round(r.sous30 / r.total * 100) : null,
+      excuses: r.excuses,
       moyenneMins: avg(r.durees),
     }))
     .sort((a, b) => {
@@ -3854,6 +3897,20 @@ function getKpi(params) {
       if (b.taux !== a.taux) return (b.taux || 0) - (a.taux || 0);
       return (a.moyenneMins || 999) - (b.moyenneMins || 999);
     });
+
+  const classementGarde = Object.values(parGarde)
+    .map(g => ({
+      email: g.email,
+      nom: usrMap[g.email] || g.email,
+      total: g.total,
+      fautes: g.fautes,
+      taux: g.total ? Math.round((g.total - g.fautes) / g.total * 100) : null,
+      moyenneSortieMin: avg(g.sorties),
+      sortiesLentes: g.sortiesLentes,
+      derogations: g.derogations,
+      ncImputees: g.ncImputees,
+    }))
+    .sort((a, b) => ((b.taux || 0) - (a.taux || 0)) || (b.total - a.total));
 
   return {
     dateDebut, dateFin,
@@ -3868,6 +3925,9 @@ function getKpi(params) {
     topMotifs,
     parHeure,
     classementResp,
+    classementGarde,
+    parCause,
+    seuilSortieGardeMin: CONFIG.GARDE_SORTIE_MAX_MIN,
   };
 }
 

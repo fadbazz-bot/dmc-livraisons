@@ -446,7 +446,6 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
   const [fait, setFait] = useState("");
   // Cause réelle du retard : par défaut le magasin ; le coordinateur la corrige après avoir regardé la frise
   const [imputation, setImputation] = useState<string>(n.imputation || "magasin");
-  const [cloturer, setCloturer] = useState(true);
   const [precision, setPrecision] = useState("");
   const precisions = n.historique.filter((h) => h.texte.startsWith("Précision du coordinateur"));
   const peutPreciser = estControleur && n.statut !== "cloturee";
@@ -486,9 +485,8 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
       api.nonConformites.justifier({
         id: n.id, acteurEmail: email, explication: explication.trim(), motifs: Array.from(motifs),
         imputation: avecCause ? imputation : undefined,
-        cloturer: estControleur && horsMagasin && cloturer,
       }),
-    onSuccess: (r) => fin(r.cloturee ? "Enregistré — retard non imputable au magasin, clôturée" : estControleur ? "Explication enregistrée" : "Explication envoyée au coordinateur"),
+    onSuccess: () => fin(estControleur ? "Explication enregistrée — à valider dans « Votre décision »" : "Explication envoyée au coordinateur"),
     onError: echec,
   });
   const mPreciser = useMutation({
@@ -651,7 +649,7 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
             <h3 className="text-sm font-semibold text-slate-900">{estControleur ? "Votre enquête" : "Ton explication"}</h3>
             {estControleur && (
               <p className="text-xs text-slate-500 -mt-1">
-                Regardez la frise ci-dessus : si le retard ne vient pas du magasin, indiquez la vraie cause. Vous pouvez saisir le justificatif à la place du responsable.
+                Regardez la frise ci-dessus : si le retard ne vient pas du magasin, indiquez la vraie cause. Vous pouvez saisir le justificatif à la place du responsable, puis le valider par une décision.
               </p>
             )}
             {avecCause && <SelecteurCause valeur={imputation} onChange={setImputation} titre={estControleur ? "À qui est dû le retard ?" : "Le retard vient-il de quelqu'un d'autre ?"} />}
@@ -676,14 +674,8 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
               </div>
             )}
             <textarea className="input min-h-[90px]" placeholder={horsMagasin ? "Que s'est-il passé ? Décrivez ce qui a retardé la livraison." : "Que s'est-il passé ? Qu'est-ce qui sera fait pour que cela ne se reproduise pas ?"} value={explication} onChange={(e) => setExplication(e.target.value)} />
-            {estControleur && horsMagasin && (
-              <label className="flex items-start gap-2 text-sm text-slate-700">
-                <input type="checkbox" className="mt-1" checked={cloturer} onChange={(e) => setCloturer(e.target.checked)} />
-                <span>Clôturer directement : ce retard n'est pas imputable au magasin ({IMPUTATION_COURT[imputation]})</span>
-              </label>
-            )}
             <button className="btn-primary w-full" disabled={mExpliquer.isPending}>
-              {mExpliquer.isPending ? "Envoi…" : estControleur ? (horsMagasin && cloturer ? "Enregistrer et clôturer" : "Enregistrer l'explication") : "Envoyer au coordinateur"}
+              {mExpliquer.isPending ? "Envoi…" : estControleur ? "Enregistrer l'explication" : "Envoyer au coordinateur"}
             </button>
           </form>
         )}

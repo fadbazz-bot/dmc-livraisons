@@ -10,7 +10,7 @@ import {
   CartesianGrid,
   Legend,
 } from "recharts";
-import { BarChart3, Target, Clock, Package, AlertCircle, RefreshCw } from "lucide-react";
+import { BarChart3, Target, Clock, Package, AlertCircle, RefreshCw, ShieldCheck } from "lucide-react";
 import { api } from "@/api/appsScript";
 import { PeriodeSelect, SiteMagasinSelect } from "@/components/FiltresPortee";
 import { periodeDepuisPreset, type Periode } from "@/lib/periode";
@@ -222,6 +222,84 @@ export default function DashboardPage() {
                       </tbody>
                     </table>
                   </div>
+                )}
+                {kpi.classementResp.some((r) => (r.excuses ?? 0) > 0) && (
+                  <p className="mt-2 text-xs text-slate-500">
+                    Les retards dont la cause a été validée par le coordinateur comme extérieure au magasin (poste de garde, client…) ne sont pas comptés contre le magasin :{" "}
+                    {kpi.classementResp.filter((r) => (r.excuses ?? 0) > 0).map((r) => `${r.nom} (${r.excuses})`).join(", ")}.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Notation du poste de garde + causes des retards */}
+            <div className="grid lg:grid-cols-2 gap-4">
+              <div className="card p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <ShieldCheck className="h-4 w-4 text-brand-900" />
+                  <h3 className="text-sm font-semibold text-slate-900">Notation du poste de garde</h3>
+                </div>
+                <p className="text-xs text-slate-500 mb-3">
+                  Une livraison compte comme « faute » si la sortie prend plus de {kpi.seuilSortieGardeMin ?? 10} min après la dernière photo,
+                  si une sortie a eu lieu sans photos, ou si un retard est imputé au poste (cause validée par le coordinateur).
+                </p>
+                {!kpi.classementGarde || kpi.classementGarde.length === 0 ? (
+                  <p className="text-sm text-slate-500 text-center py-6">—</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                      <thead className="text-xs font-medium text-slate-500 border-b border-slate-200">
+                        <tr>
+                          <th className="px-2 py-2 text-left">#</th>
+                          <th className="px-2 py-2 text-left">Poste</th>
+                          <th className="px-2 py-2 text-right">Livraisons</th>
+                          <th className="px-2 py-2 text-right" title="Temps moyen entre la dernière photo et la sortie">Sortie moy.</th>
+                          <th className="px-2 py-2 text-right" title="Sorties trop lentes · sans photos · retards imputés">Fautes</th>
+                          <th className="px-2 py-2 text-right">Note</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {kpi.classementGarde.slice(0, 10).map((g, i) => (
+                          <tr key={g.email}>
+                            <td className="px-2 py-2 font-medium">{i + 1}</td>
+                            <td className="px-2 py-2 font-medium text-slate-900">{g.nom}</td>
+                            <td className="px-2 py-2 text-right font-mono text-xs">{g.total}</td>
+                            <td className="px-2 py-2 text-right font-mono text-xs">{g.moyenneSortieMin !== null ? formatDuree(g.moyenneSortieMin) : "—"}</td>
+                            <td className="px-2 py-2 text-right text-xs text-slate-600" title={`${g.sortiesLentes} sortie(s) lente(s) · ${g.derogations} sans photos · ${g.ncImputees} retard(s) imputé(s)`}>
+                              {g.fautes}
+                              {g.fautes > 0 && <span className="text-slate-400"> ({g.sortiesLentes}·{g.derogations}·{g.ncImputees})</span>}
+                            </td>
+                            <td className={cn("px-2 py-2 text-right font-semibold", kpiColorClass(g.taux))}>{g.taux !== null ? `${g.taux}%` : "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div className="card p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <AlertCircle className="h-4 w-4 text-amber-600" />
+                  <h3 className="text-sm font-semibold text-slate-900">À qui sont dus les retards ?</h3>
+                </div>
+                <p className="text-xs text-slate-500 mb-3">Causes retenues par le coordinateur après enquête (retards et attentes dont la non-conformité a été traitée).</p>
+                {!kpi.parCause || kpi.parCause.length === 0 ? (
+                  <p className="text-sm text-slate-500 text-center py-6">Aucune cause validée sur la période.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {kpi.parCause.map((c) => {
+                      const max = Math.max(...(kpi.parCause ?? []).map((x) => x.count), 1);
+                      return (
+                        <li key={c.cause} className="text-sm">
+                          <div className="flex justify-between"><span className="text-slate-800">{c.label}</span><span className="num font-semibold">{c.count}</span></div>
+                          <div className="h-2 rounded bg-slate-100 overflow-hidden mt-0.5">
+                            <div className={cn("h-full", c.cause === "magasin" ? "bg-brand-700" : "bg-sky-500")} style={{ width: `${(c.count / max) * 100}%` }} />
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 )}
               </div>
             </div>

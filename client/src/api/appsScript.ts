@@ -470,9 +470,7 @@ export const nonConformites = {
     motifs?: string[];
     /** Cause réelle si ce n'est pas le magasin (garde, showroom, commercial, client, autre) */
     imputation?: string;
-    /** Coordinateur seulement : clôture directement (retard non imputable au magasin) */
-    cloturer?: boolean;
-  }) => apiPost<{ ok: true; cloturee?: boolean }>("justifierNonConformite", input),
+  }) => apiPost<{ ok: true }>("justifierNonConformite", input),
   /** Précision du coordinateur (2e niveau d'explication), avec correction possible de la cause */
   preciser: (input: { id: string; acteurEmail: string; texte: string; imputation?: string }) =>
     apiPost<{ ok: true }>("preciserNonConformite", input),

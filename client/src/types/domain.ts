@@ -323,6 +323,27 @@ export interface KpiResponsable {
   sous30: number;
   taux: number | null;
   moyenneMins: number | null;
+  /** Retards dont la cause validée n'est pas le magasin (non comptés contre lui) */
+  excuses?: number;
+}
+
+/** Notation du poste de garde / de l'agent showroom */
+export interface KpiGarde {
+  email: string;
+  nom: string;
+  total: number;
+  fautes: number;
+  taux: number | null;
+  moyenneSortieMin: number | null;
+  sortiesLentes: number;
+  derogations: number;
+  ncImputees: number;
+}
+
+export interface KpiCause {
+  cause: string;
+  label: string;
+  count: number;
 }
 
 export interface Kpi {
@@ -339,6 +360,9 @@ export interface Kpi {
   topMotifs: KpiMotif[];
   parHeure: Record<string, number>;
   classementResp: KpiResponsable[];
+  classementGarde?: KpiGarde[];
+  parCause?: KpiCause[];
+  seuilSortieGardeMin?: number;
 }
 
 // ─── Jalon — étapes du flux v2 ────────────────────────────────────────────────
