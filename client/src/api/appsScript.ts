@@ -473,6 +473,9 @@ export const nonConformites = {
     /** Coordinateur seulement : clôture directement (retard non imputable au magasin) */
     cloturer?: boolean;
   }) => apiPost<{ ok: true; cloturee?: boolean }>("justifierNonConformite", input),
+  /** Précision du coordinateur (2e niveau d'explication), avec correction possible de la cause */
+  preciser: (input: { id: string; acteurEmail: string; texte: string; imputation?: string }) =>
+    apiPost<{ ok: true }>("preciserNonConformite", input),
   /** Frise détaillée d'une livraison (durée de chaque étape + journal) */
   frise: (acteurEmail: string, expId: string) =>
     apiGet<FriseLivraison>("getFriseExpedition", { acteurEmail, expId }),

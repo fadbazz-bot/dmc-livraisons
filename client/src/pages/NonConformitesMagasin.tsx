@@ -343,7 +343,7 @@ export default function NonConformitesMagasinPage() {
 const ETAPES: { n: number; titre: string; acteur: string; texte: string }[] = [
   { n: 1, titre: "Anomalie repérée", acteur: "Automatique ou coordinateur", texte: "Retard, plaque différente, sortie sans photos, attente anormale… ou constat fait sur le terrain. Le responsable est prévenu." },
   { n: 2, titre: "Explication", acteur: "Responsable du magasin", texte: "Il explique ce qui s'est passé, sous 24 h." },
-  { n: 3, titre: "Décision", acteur: "Coordinateur", texte: "Explication acceptée : c'est terminé. Ou non-conformité confirmée : une action corrective avec échéance est demandée." },
+  { n: 3, titre: "Validation", acteur: "Coordinateur", texte: "Il regarde la frise, peut ajouter ses précisions ou corriger la cause. Puis il accepte l'explication (terminé) ou confirme la non-conformité : une action corrective avec échéance est demandée." },
   { n: 4, titre: "Action corrective", acteur: "Responsable du magasin", texte: "Il réalise l'action avant l'échéance et le dit ici : c'est clôturé." },
 ];
 
@@ -447,6 +447,9 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
   // Cause réelle du retard : par défaut le magasin ; le coordinateur la corrige après avoir regardé la frise
   const [imputation, setImputation] = useState<string>(n.imputation || "magasin");
   const [cloturer, setCloturer] = useState(true);
+  const [precision, setPrecision] = useState("");
+  const precisions = n.historique.filter((h) => h.texte.startsWith("Précision du coordinateur"));
+  const peutPreciser = estControleur && n.statut !== "cloturee";
   const horsMagasin = imputation !== "magasin";
   const avecCause = n.type === "RETARD" || n.type === "ATTENTE";
   const peutVoirFrise = !!n.expId && (user?.role === "responsable" || estControleur);
@@ -486,6 +489,19 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
         cloturer: estControleur && horsMagasin && cloturer,
       }),
     onSuccess: (r) => fin(r.cloturee ? "Enregistré — retard non imputable au magasin, clôturée" : estControleur ? "Explication enregistrée" : "Explication envoyée au coordinateur"),
+    onError: echec,
+  });
+  const mPreciser = useMutation({
+    mutationFn: () =>
+      api.nonConformites.preciser({
+        id: n.id, acteurEmail: email, texte: precision.trim(),
+        imputation: avecCause && imputation !== (n.imputation || "magasin") ? imputation : undefined,
+      }),
+    onSuccess: () => {
+      toast.success("Précision enregistrée — le responsable est prévenu");
+      setPrecision("");
+      qc.invalidateQueries({ queryKey: ["non-conformites"] });
+    },
     onError: echec,
   });
   const mDecider = useMutation({
@@ -602,11 +618,31 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
             {n.controleurCommentaire && <div className="mt-1 text-xs italic">Coordinateur : « {n.controleurCommentaire} »</div>}
           </div>
         )}
+        {/* Deux niveaux : 1) le responsable explique, 2) le coordinateur précise puis valide */}
         {n.explication && n.statut !== "ouverte" && (
           <div className="rounded-lg bg-slate-50 border border-line p-3 text-sm">
-            <div className="text-xs text-slate-500 mb-0.5">Explication du responsable</div>
+            <div className="text-xs text-slate-500 mb-0.5">
+              Niveau 1 — {n.expliquePar && n.expliquePar === n.responsableEmail ? "Explication du responsable" : `Explication de ${n.expliquePar || "le responsable"}`}
+              {n.expliqueLe ? ` · ${formatDateTime(n.expliqueLe)}` : ""}
+            </div>
             {n.motifs && <div className="font-medium text-slate-900">{n.motifs}</div>}
             <div className="text-slate-700">{n.explication}</div>
+          </div>
+        )}
+        {(precisions.length > 0 || (n.controleurCommentaire && n.decision)) && (
+          <div className="rounded-lg bg-sky-50 border border-sky-200 p-3 text-sm space-y-1.5">
+            <div className="text-xs font-medium text-sky-800">Niveau 2 — Coordinateur</div>
+            {precisions.map((h, i) => (
+              <div key={i} className="text-sky-950">
+                <span className="num text-xs text-sky-700 mr-1.5">{formatDateTime(h.at)}</span>
+                <span className="font-medium">{h.par}</span> — {h.texte.replace(/^Précision du coordinateur( \(cause : [^)]*\))? : /, "")}
+              </div>
+            ))}
+            {n.controleurCommentaire && n.decision && (
+              <div className="text-sky-950">
+                <span className="font-medium">{n.decision === "acceptee" ? "Explication acceptée" : "Non-conformité confirmée"}</span> — {n.controleurCommentaire}
+              </div>
+            )}
           </div>
         )}
 
@@ -650,6 +686,20 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
               {mExpliquer.isPending ? "Envoi…" : estControleur ? (horsMagasin && cloturer ? "Enregistrer et clôturer" : "Enregistrer l'explication") : "Envoyer au coordinateur"}
             </button>
           </form>
+        )}
+
+        {peutPreciser && (
+          <div className="space-y-2 border-t border-line pt-4">
+            <h3 className="text-sm font-semibold text-slate-900">Ajouter une précision <span className="font-normal text-slate-500">(sans trancher)</span></h3>
+            <p className="text-xs text-slate-500 -mt-1">
+              Complétez ou nuancez l'explication après avoir regardé la frise. Le responsable est prévenu{avecCause ? ' ; vous pouvez aussi corriger la cause' : ""}.
+            </p>
+            {avecCause && !peutExpliquer && !peutDecider && <SelecteurCause valeur={imputation} onChange={setImputation} titre="Cause réelle du retard" />}
+            <textarea className="input min-h-[70px]" placeholder="Ex : le camion est resté 20 min devant le portail, le magasin n'y est pour rien" value={precision} onChange={(e) => setPrecision(e.target.value)} />
+            <button type="button" className="btn-outline w-full" disabled={mPreciser.isPending || precision.trim().length < 5} onClick={() => mPreciser.mutate()}>
+              {mPreciser.isPending ? "Enregistrement…" : "Enregistrer la précision"}
+            </button>
+          </div>
         )}
 
         {peutDecider && (

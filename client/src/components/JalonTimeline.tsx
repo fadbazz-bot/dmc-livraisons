@@ -1,6 +1,7 @@
 import { JALONS, type Expedition } from "@/types/domain";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
+import { BoutonFrise } from "@/components/FriseModal";
 
 /**
  * Progression de l'expédition en 4 jalons.
@@ -9,7 +10,8 @@ import { formatTime } from "@/lib/format";
 export function JalonTimeline({ exp, compact = false }: { exp: Expedition; compact?: boolean }) {
   const firstTodo = JALONS.findIndex((j) => !exp[j.field]);
   return (
-    <ol className="flex items-start" aria-label="Progression de l'expédition">
+    <div className="flex items-start gap-2 min-w-0 flex-1">
+    <ol className="flex items-start flex-1 min-w-0" aria-label="Progression de l'expédition">
       {JALONS.map((j, i) => {
         const ts = exp[j.field];
         const done = !!ts;
@@ -47,5 +49,7 @@ export function JalonTimeline({ exp, compact = false }: { exp: Expedition; compa
         );
       })}
     </ol>
+    {firstTodo !== 0 && <BoutonFrise expId={exp.id} />}
+    </div>
   );
 }

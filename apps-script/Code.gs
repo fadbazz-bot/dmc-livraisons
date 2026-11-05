@@ -268,6 +268,7 @@ function handleRequest(e) {
       "getFriseExpedition":           () => getFriseExpedition(params),
       "getFrisesLivraisons":          () => getFrisesLivraisons(params),
       "justifierNonConformite":       () => justifierNonConformite(params),
+      "preciserNonConformite":        () => preciserNonConformite(params),
       "decisionNonConformite":        () => decisionNonConformite(params),
       "terminerActionNonConformite":  () => terminerActionNonConformite(params),
       "creerNonConformite":           () => creerNonConformite(params),
@@ -1967,6 +1968,42 @@ function justifierNonConformite(params) {
   } finally { lock.releaseLock(); }
 }
 
+/**
+ * Précision du coordinateur : deuxième niveau d'explication. Il complète (ou nuance) ce que le responsable
+ * a dit, après avoir regardé la frise, sans trancher tout de suite. Visible de tous dans la fiche.
+ * Peut aussi corriger la cause réelle du retard (imputation).
+ */
+function preciserNonConformite(params) {
+  const u = ncUser_(params.acteurEmail);
+  if (["coordinateur", "controleur", "admin"].indexOf(u.ROLE) === -1) throw new Error("Réservé au coordinateur");
+  const texte = String(params.texte || "").trim();
+  if (texte.length < 5) throw new Error("Précision requise (quelques mots au moins)");
+  const lock = LockService.getScriptLock(); lock.waitLock(15000);
+  try {
+    const c = ncChargerLigne_(params.id);
+    const n = ncLire_(c.sh, c.row);
+    if (u.ROLE !== "admin" && !ncVisible_(u, n)) throw new Error("Cette non-conformité ne concerne pas votre site");
+    const champs = {};
+    let txt = "Précision du coordinateur : " + texte;
+    if (params.imputation !== undefined && params.imputation !== null && params.imputation !== "") {
+      const imp = ncImputation_(params.imputation);
+      if (!imp) throw new Error("Cause inconnue");
+      champs.IMPUTATION = imp === "magasin" ? "" : imp;
+      txt = "Précision du coordinateur (cause : " + NC_IMPUTATIONS[imp] + ") : " + texte;
+    }
+    champs.HISTORIQUE = ncHisto_(n.HISTORIQUE, u.NOM || u.EMAIL, txt);
+    ncMaj_(c.sh, c.row, champs);
+    try {
+      const resp = n.RESPONSABLE_EMAIL;
+      if (resp && n.STATUT !== "cloturee") {
+        sendChatMessage({ text: "🔎 *Précision du coordinateur* — " + ((NC_TYPES[n.TYPE] || {}).label || n.TYPE) + "\n" +
+          (n.NUM_CMD ? "Commande " + n.NUM_CMD + " · " : "") + (n.ZONE || n.SITE || "") + "\n" + (u.NOM || u.EMAIL) + " : " + texte + "\n" + mention(resp) });
+      }
+    } catch (e) {}
+    return { ok: true };
+  } finally { lock.releaseLock(); }
+}
+
 /** Cohérence avec le circuit historique des justificatifs (colonnes de l'expédition). */
 function ncSyncDecisionRetard_(n, decision, u, comm, ts) {
   if (n.TYPE !== "RETARD" || !n.EXP_ID) return;
@@ -2095,12 +2132,6 @@ function friseNoms_() {
   return noms;
 }
 
-function friseAutorise_(u, exp, cmd) {
-  if (["admin", "coordinateur", "controleur", "responsable"].indexOf(u.ROLE) === -1) throw new Error("Accès réservé au coordinateur et aux responsables");
-  const pseudo = { SITE: (cmd && cmd.SITE) || "", ZONE: exp.ZONE, RESPONSABLE_EMAIL: exp.RESPONSABLE_EMAIL };
-  if (!ncVisible_(u, pseudo)) throw new Error("Cette livraison ne concerne pas votre site");
-}
-
 /** Frise détaillée d'une livraison + journal complet des événements. */
 function getFriseExpedition(params) {
   const u = ncUser_(params.acteurEmail);
@@ -2109,7 +2140,7 @@ function getFriseExpedition(params) {
   const exp = sheetToObjects(getSheet("EXPEDITIONS"), COL_EXP).find(function(e) { return e.ID === expId; });
   if (!exp) throw new Error("Livraison introuvable");
   const cmd = sheetToObjects(getSheet("COMMANDES"), COL_CMD).find(function(c) { return c.ID === exp.CMD_ID; }) || null;
-  friseAutorise_(u, exp, cmd);
+  // La frise est visible par tous les comptes actifs : chacun voit où le temps est passé (sans donnée sensible).
   const evts = sheetToObjects(getSheet("EVENEMENTS"), COL_EVT).filter(function(e) { return e.EXP_ID === expId; })
     .sort(function(a, b) { return (friseMs_(a.TIMESTAMP) || 0) - (friseMs_(b.TIMESTAMP) || 0); });
   const f = friseConstruire_(exp, cmd, evts, friseNoms_());
