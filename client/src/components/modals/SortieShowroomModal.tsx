@@ -38,9 +38,10 @@ export function SortieShowroomModal({ exp, open, onClose }: Props) {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erreur inconnue"),
   });
 
-  // Calcul du temps écoulé depuis T0
+  // Temps de service : depuis l'entrée du client sur place (pas depuis l'annonce du commercial)
+  const debutService = exp.tEntreeSite ?? exp.t0;
   const ecoule =
-    exp.t0 !== null ? Math.round((Date.now() - new Date(exp.t0).getTime()) / 60000) : null;
+    debutService !== null ? Math.round((Date.now() - new Date(debutService).getTime()) / 60000) : null;
 
   return (
     <Modal
@@ -80,7 +81,7 @@ export function SortieShowroomModal({ exp, open, onClose }: Props) {
                 : "bg-emerald-50 border-emerald-200 text-emerald-800")
             }
           >
-            <div className="text-xs font-medium opacity-75">Temps écoulé depuis instruction</div>
+            <div className="text-xs font-medium opacity-75">Temps depuis l'entrée du client</div>
             <div className="text-lg font-bold mt-0.5">{formatDuree(ecoule)}</div>
             {ecoule > 30 && (
               <div className="text-xs mt-1">Sortie marquée en retard — le responsable devra justifier.</div>

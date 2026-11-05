@@ -67,6 +67,7 @@ function prochaineEtape(n: NonConformite): string {
     case "action_en_cours":
       return `Le responsable doit réaliser l'action corrective — échéance ${n.actionEcheance ?? "?"}`;
     default:
+      if (n.decision === "annulee") return "Annulée : le temps se compte désormais depuis l'entrée du client";
       return n.decision === "acceptee" ? "Explication acceptée" : n.action ? "Action corrective réalisée" : "Terminée";
   }
 }
@@ -1118,7 +1119,9 @@ function compter(items: string[]): { label: string; n: number }[] {
   return [...m.entries()].map(([label, n]) => ({ label, n })).sort((a, b) => b.n - a.n);
 }
 
-function Suivi({ liste, periode }: { liste: NonConformite[]; periode: Periode }) {
+function Suivi({ liste: toutes, periode }: { liste: NonConformite[]; periode: Periode }) {
+  // Les non-conformités annulées (ancien calcul de durée corrigé) ne comptent pas dans les chiffres
+  const liste = useMemo(() => toutes.filter((n) => n.decision !== "annulee"), [toutes]);
   const stats = useMemo(() => {
     const total = liste.length;
     const cloturees = liste.filter((n) => n.statut === "cloturee");

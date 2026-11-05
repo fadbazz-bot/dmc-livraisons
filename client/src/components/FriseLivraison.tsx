@@ -37,13 +37,17 @@ function useDirect(f: Frise) {
     const t = setInterval(() => setTick((x) => x + 1), 30_000);
     return () => clearInterval(t);
   }, [enCours]);
-  const segments = f.segments.map((s) =>
+  const tous = f.segments.map((s) =>
     s.enCours ? { ...s, dureeMin: Math.max(0, Math.round((Date.now() - new Date(s.debut).getTime()) / 60000)) } : s,
   );
-  const debut = f.jalons[0] ? new Date(f.jalons[0].at).getTime() : null;
+  // Le temps de service démarre à l'entrée du client sur place ; l'attente avant son arrivée est à part.
+  const segments = tous.filter((s) => !s.horsDelai);
+  const avant = tous.find((s) => s.horsDelai) ?? null;
+  const entree = f.jalons.find((j) => j.code === "entree");
+  const debut = entree ? new Date(entree.at).getTime() : null;
   const finMs = f.termine && f.jalons.length ? new Date(f.jalons[f.jalons.length - 1].at).getTime() : Date.now();
   const total = debut === null ? null : Math.max(0, Math.round((finMs - debut) / 60000));
-  return { segments, total, enCours };
+  return { segments, avant, total, enCours };
 }
 
 interface Calcul {
@@ -105,6 +109,9 @@ export function FriseMini({ f }: { f: Frise }) {
   const { segments, total } = useDirect(f);
   const c = calculer(segments, f.delaiMaxMin, total);
   const depasse = (total ?? 0) > f.delaiMaxMin;
+  if (total === null) {
+    return <div className="w-full text-xs text-slate-400">Client pas encore sur place</div>;
+  }
   return (
     <div className="w-full">
       <div className="flex items-baseline justify-between text-xs mb-1">
@@ -129,7 +136,7 @@ export function FriseLivraison({
   onImputer?: (code: string) => void;
   imputationActive?: string;
 }) {
-  const { segments, total, enCours } = useDirect(f);
+  const { segments, avant, total, enCours } = useDirect(f);
   const c = calculer(segments, f.delaiMaxMin, total);
   const depasse = (total ?? 0) > f.delaiMaxMin;
   const plusLongue = c.segments.find((s) => s.plusLongue);
@@ -145,9 +152,11 @@ export function FriseLivraison({
         <div className="flex items-baseline gap-1.5">
           <Clock className="h-4 w-4 self-center text-slate-400" />
           <span className={cn("num text-2xl font-bold", depasse ? "text-red-700" : "text-emerald-700")}>{formatDuree(total)}</span>
-          <span className="text-xs text-slate-500">de l'inscription {f.termine ? "à la sortie" : "à maintenant"}</span>
+          <span className="text-xs text-slate-500">depuis l'entrée du client {f.termine ? "jusqu'à la sortie" : "jusqu'à maintenant"}</span>
         </div>
-        {depasse ? (
+        {total === null ? (
+          <span className="badge-neutral">Client pas encore sur place — le chrono démarre à son entrée</span>
+        ) : depasse ? (
           <span className="badge-danger">+{formatDuree((total ?? 0) - f.delaiMaxMin)} au-delà des {f.delaiMaxMin} min</span>
         ) : (
           <span className="badge-success">Dans les {f.delaiMaxMin} min</span>
@@ -185,7 +194,9 @@ export function FriseLivraison({
       {/* Déroulé : repères (qui / quand) et durée de chaque étape entre deux repères */}
       <ol className="relative ml-1.5 border-l-2 border-slate-200 pl-5 space-y-3">
         {f.jalons.map((j, i) => {
-          const seg = c.segments.find((s) => s.code === f.jalons[i + 1]?.code) ?? (i === f.jalons.length - 1 ? c.segments.find((s) => s.enCours) : undefined);
+          const suivant = f.jalons[i + 1]?.code;
+          const seg = c.segments.find((s) => s.code === suivant) ?? (i === f.jalons.length - 1 ? c.segments.find((s) => s.enCours) : undefined);
+          const horsDelai = j.code === "inscription" ? avant : null;
           return (
             <li key={j.code + j.at} className="space-y-2">
               <div className="relative">
@@ -199,6 +210,7 @@ export function FriseLivraison({
                   {j.detail && <span className="truncate"> · {j.detail}</span>}
                 </div>
               </div>
+              {horsDelai && <AvantClient s={horsDelai} />}
               {seg && <Etape s={seg} total={total ?? 0} seuil={f.delaiMaxMin} onImputer={onImputer} imputationActive={imputationActive} />}
             </li>
           );
@@ -267,6 +279,24 @@ function Etape({
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** Attente avant l'arrivée du client : mesurée pour l'analyse, mais hors des 30 minutes. */
+function AvantClient({ s }: { s: FriseSegment }) {
+  return (
+    <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-2.5 text-sm">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+        <span className="font-medium text-slate-600">{s.enCours ? "En attente de l'arrivée du client" : "Avant l'arrivée du client"}</span>
+        <span className="num font-semibold text-slate-700">
+          {s.enCours && <Hourglass className="inline h-3 w-3 mr-1 -mt-0.5 text-slate-500" />}
+          {formatDuree(s.dureeMin)}
+        </span>
+      </div>
+      <div className="text-xs text-slate-500">
+        {formatTime(s.debut)}{s.fin ? ` → ${formatTime(s.fin)}` : ""} · annonce du commercial jusqu'à l'entrée du client — <strong>non comptée</strong> dans les 30 min
       </div>
     </div>
   );

@@ -49,7 +49,7 @@ const CONFIG = {
   // ── Non-conformités ──
   NC_DELAI_JUSTIF_H:        24,   // délai laissé au responsable pour expliquer une non-conformité
   NC_ATTENTE_MAX_MIN:       30,   // véhicule entré sur le site mais pas pris en charge au magasin après X min
-  NC_CHARGEMENT_MAX_MIN:    60,   // chargement commencé (depuis T0) toujours pas sorti après X min
+  NC_CHARGEMENT_MAX_MIN:    60,   // chargement commencé (depuis l'entrée du client) toujours pas sorti après X min
 };
 
 // Colonnes feuille COMMANDES
@@ -295,6 +295,7 @@ function handleRequest(e) {
       "addMedia":               () => addMedia(params),
       // Administration — nettoyage des données (admin uniquement, corbeille de sécurité)
       "adminCompterDonnees":    () => adminCompterDonnees(params),
+      "adminRecalculerTempsService": () => adminRecalculerTempsService(params),
       "adminListerDonnees":     () => adminListerDonnees(params),
       "adminSupprimerLignes":   () => adminSupprimerLignes(params),
       "adminListerCorbeille":   () => adminListerCorbeille(params),
@@ -564,6 +565,19 @@ function findRow(sheet, colIdx, value) {
 
 function now() {
   return new Date().toISOString();
+}
+
+/**
+ * Début du temps de service : le client est SUR PLACE (entrée autorisée), pour tous les magasins.
+ * L'annonce du commercial (T0) reste utile pour mesurer l'attente avant l'arrivée du client, mais ne compte
+ * ni dans les 30 minutes ni dans le temps de service. Repli sur T0 si l'entrée n'a pas été enregistrée.
+ */
+function debutService_(e) {
+  return e.T_ENTREE_SITE || e.T0;
+}
+
+function dureeService_(e) {
+  return dureeMin(debutService_(e), e.T_SORTIE_SITE);
 }
 
 function dureeMin(t1, t2) {
@@ -886,7 +900,7 @@ function getRetardsAValider(params) {
     numeroBL: e.NUMERO_BL || null,
     responsableEmail: e.RESPONSABLE_EMAIL || null,
     chefPosteEmail: e.CHEF_POSTE_EMAIL || null,
-    dureeService: dureeMin(e.T0, e.T_SORTIE_SITE),  // Bug #1 fix : T3 → T_SORTIE_SITE
+    dureeService: dureeService_(e),  // depuis l'entrée du client sur place
   };
   });
 }
@@ -1082,7 +1096,7 @@ function serializeCommande(cmd, exps) {
     responsableEmail: e.RESPONSABLE_EMAIL || null,
     chefPosteEmail: e.CHEF_POSTE_EMAIL || null,
     dureePreparation: dureeMin(e.T0, e.T1),
-    dureeService: dureeMin(e.T0, e.T_SORTIE_SITE),  // Bug #1 fix : T3 → T_SORTIE_SITE
+    dureeService: dureeService_(e),  // depuis l'entrée du client sur place
   }));
 
   return {
@@ -1394,7 +1408,7 @@ function serializeExp(e) {
     controleurEmail: e.CONTROLEUR_EMAIL || null,
     commentaireControleur: e.COMMENTAIRE_CONTROLEUR || null,
     dureePreparation: dureeMin(e.T1, e.T2),
-    dureeService: dureeMin(e.T0, e.T_SORTIE_SITE),
+    dureeService: dureeService_(e),
     dureeAttente: dureeMin(e.T0, e.T_ENTREE_SITE),
     // Champs module flotte interne
     modeLivraison: e.MODE_LIVRAISON || "externe",
@@ -2068,7 +2082,8 @@ function friseConstruire_(exp, cmd, evts, noms) {
   // Libellés et suspects de chaque tronçon, selon l'étape qu'il termine
   const poste = showroom ? "showroom" : "garde";
   const TRONCONS = {
-    entree:  { label: "Attente avant l'entrée", role: showroom ? "agent_showroom" : "chef_poste", suggestions: ["client", poste, "commercial"] },
+    // Avant l'arrivée du client : mesurée (analyse de l'attente) mais HORS des 30 minutes / du temps de service
+    entree:  { label: "Annonce du commercial → client sur place", role: showroom ? "agent_showroom" : "chef_poste", suggestions: [], horsDelai: true },
     magasin: { label: "De l'entrée à l'arrivée au magasin", role: "responsable", suggestions: ["client", "magasin", poste] },
     photos:  { label: "Chargement du véhicule", role: "responsable", suggestions: ["magasin", "client"] },
     sortie:  { label: showroom ? "Remise au client et sortie" : (evPhotos ? "Contrôle et sortie du site" : "Chargement et sortie du site"), role: showroom ? "agent_showroom" : "chef_poste", suggestions: [poste, "magasin", "client"] },
@@ -2082,7 +2097,7 @@ function friseConstruire_(exp, cmd, evts, noms) {
     seg.push({
       code: fin.code, label: t.label, acteurRole: t.role, acteurNom: fin.acteurNom, acteurEmail: fin.acteurEmail,
       debut: new Date(deb.ms).toISOString(), fin: new Date(fin.ms).toISOString(),
-      dureeMin: Math.max(0, Math.round((fin.ms - deb.ms) / 60000)), enCours: false, suggestions: t.suggestions,
+      dureeMin: Math.max(0, Math.round((fin.ms - deb.ms) / 60000)), enCours: false, suggestions: t.suggestions, horsDelai: !!t.horsDelai,
     });
   }
   const sorti = jal.some(function(j) { return j.code === "sortie"; });
@@ -2097,22 +2112,29 @@ function friseConstruire_(exp, cmd, evts, noms) {
       seg.push({
         code: suivant, label: t.label, acteurRole: t.role, acteurNom: "", acteurEmail: "",
         debut: new Date(dernierJal.ms).toISOString(), fin: null,
-        dureeMin: Math.max(0, Math.round((nowMs - dernierJal.ms) / 60000)), enCours: true, suggestions: t.suggestions,
+        dureeMin: Math.max(0, Math.round((nowMs - dernierJal.ms) / 60000)), enCours: true, suggestions: t.suggestions, horsDelai: !!t.horsDelai,
       });
     }
   }
+  // Étape la plus longue : uniquement parmi celles qui comptent (client sur place)
   let plusLongue = "", max = -1;
-  seg.forEach(function(x) { if (x.dureeMin > max) { max = x.dureeMin; plusLongue = x.code; } });
-  const debut = jal.length ? jal[0].ms : null;
+  const comptees = seg.filter(function(x) { return !x.horsDelai; });
+  comptees.forEach(function(x) { if (x.dureeMin > max) { max = x.dureeMin; plusLongue = x.code; } });
+  // Temps de service : de l'entrée du client sur place à la sortie (ou à maintenant)
+  const jEntree = jal.filter(function(j) { return j.code === "entree"; })[0] || null;
+  const debut = jEntree ? jEntree.ms : null;
   const finMs = sorti ? jal[jal.length - 1].ms : Date.now();
   const total = debut !== null ? Math.max(0, Math.round((finMs - debut) / 60000)) : null;
+  const jInscr = jal.filter(function(j) { return j.code === "inscription"; })[0] || null;
+  const attenteClientMin = jInscr && jEntree ? Math.max(0, Math.round((jEntree.ms - jInscr.ms) / 60000)) : null;
   return {
     expId: exp.ID, numCmd: exp.NUM_CMD_NAV_LOCAL || (cmd && cmd.NUM_CMD_NAV) || "", client: (cmd && cmd.NOM_CLIENT) || "",
     site: (cmd && cmd.SITE) || "", zone: exp.ZONE || "", numExpedition: exp.NUM_EXPEDITION || "",
     plaque: exp.PLAQUE || "", chauffeur: exp.CHAUFFEUR || "", statut: exp.STATUT || "", showroom: showroom,
     delaiMaxMin: CONFIG.DELAI_MAX_MIN, totalMin: total, termine: sorti,
     depasseMin: total !== null ? Math.max(0, total - CONFIG.DELAI_MAX_MIN) : 0,
-    plusLongue: seg.length > 1 ? plusLongue : "",
+    plusLongue: comptees.length > 1 ? plusLongue : "",
+    clientSurPlace: !!jEntree, attenteClientMin: attenteClientMin,
     jalons: jal.map(function(j) { return { code: j.code, label: j.label, at: new Date(j.ms).toISOString(), acteurNom: j.acteurNom, acteurEmail: j.acteurEmail, detail: j.detail }; }),
     segments: seg,
   };
@@ -2320,8 +2342,8 @@ function ncBalayage() {
       if (att > CONFIG.NC_ATTENTE_MAX_MIN) {
         ncOuvrir_("ATTENTE", e, "Véhicule sur le site depuis " + att + " min sans prise en charge au magasin");
       }
-    } else if (e.STATUT === "en_chargement" && e.T0) {
-      const att = Math.round((tNow - creation) / 60000);
+    } else if (e.STATUT === "en_chargement" && debutService_(e)) {
+      const att = Math.round((tNow - new Date(debutService_(e)).getTime()) / 60000);
       if (att > CONFIG.NC_CHARGEMENT_MAX_MIN) {
         ncOuvrir_("ATTENTE", e, "Chargement en cours depuis " + att + " min, toujours pas sorti du site");
       }
@@ -2329,7 +2351,7 @@ function ncBalayage() {
     // 2) Reprise des retards déjà en base avant la mise en service du registre (sans bruit dans le Chat)
     if (creation && creation > limiteReprise) {
       if (e.STATUT === "retard_a_justifier" && !e.MOTIF_RETARD) {
-        ncOuvrir_("RETARD", e, "Livraison en " + dureeMin(e.T0, e.T_SORTIE_SITE) + " min (seuil " + CONFIG.DELAI_MAX_MIN + " min)",
+        ncOuvrir_("RETARD", e, "Livraison en " + dureeService_(e) + " min depuis l'entrée du client (seuil " + CONFIG.DELAI_MAX_MIN + " min)",
           { silencieux: true, origine: "reprise", relanceLe: now(), creeLe: ncIso_(e.T_SORTIE_SITE) || now() });
       }
     }
@@ -2346,7 +2368,7 @@ function ncReprendreRetardsExpliques_(exps, limiteReprise) {
     if (e.ARCHIVED_AT || dejaPris[e.ID]) return;
     if (!e.MOTIF_RETARD || e.VALIDATION_CONTROLEUR) return;
     if (!e.T0 || new Date(e.T0).getTime() < limiteReprise) return;
-    const id = ncOuvrir_("RETARD", e, "Livraison en " + dureeMin(e.T0, e.T_SORTIE_SITE) + " min (seuil " + CONFIG.DELAI_MAX_MIN + " min)",
+    const id = ncOuvrir_("RETARD", e, "Livraison en " + dureeService_(e) + " min depuis l'entrée du client (seuil " + CONFIG.DELAI_MAX_MIN + " min)",
       { silencieux: true, origine: "reprise", relanceLe: now(), creeLe: ncIso_(e.T_SORTIE_SITE) || now() });
     if (!id) return;
     try {
@@ -2703,6 +2725,88 @@ function adminLireOnglet_(name) {
   }
   const all = sh.getRange(1, 1, last, cols).getValues();
   return { sh: sh, headers: all[0], rows: all.slice(1) };
+}
+
+/**
+ * Nettoyage des données faussées par l'ancien calcul (le temps de service partait de l'annonce du commercial
+ * au lieu de l'entrée du client sur place).
+ *  - Retards (> 30 min) qui n'en sont plus avec le bon calcul : statut de l'expédition remis à « sortie »,
+ *    motif/commentaire de retard retirés, non-conformité RETARD annulée (decision = "annulee") SI personne n'a encore décidé.
+ *  - Non-conformités déjà tranchées par le coordinateur : jamais modifiées (comptées pour revue manuelle).
+ *  - Alertes « chargement en cours depuis X min » calculées depuis l'annonce : annulées si elles ne tiennent plus.
+ * appliquer = false → simple aperçu (rien n'est modifié).
+ */
+function adminRecalculerTempsService(params) {
+  assertAdmin(params.acteurEmail);
+  const appliquer = params.appliquer === true || String(params.appliquer) === "true";
+  const lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    const exps = sheetToObjects(getSheet("EXPEDITIONS"), COL_EXP);
+    const expParId = {};
+    exps.forEach(function(e) { expParId[e.ID] = e; });
+    const sh = ncSheet_();
+    const ncs = ncRead_();
+    const ts = now();
+    const rapport = { appliquer: appliquer, expeditionsCorrigees: 0, ncAnnulees: 0, ncMisesAJour: 0, ncDejaTranchees: 0, exemples: [] };
+    const sansDecision = function(n) { return !n.DECISION && ["ouverte", "contestee", "expliquee"].indexOf(n.STATUT) !== -1; };
+    const annuler = function(n, texte) {
+      ncMaj_(sh, n._row, { STATUT: "cloturee", DECISION: "annulee", DECISION_LE: ts, CLOTURE_LE: ts, HISTORIQUE: ncHisto_(n.HISTORIQUE, "système", texte) });
+    };
+
+    // 1) Retards recalculés depuis l'entrée du client
+    exps.forEach(function(e) {
+      if (e.ARCHIVED_AT || !e.T_SORTIE_SITE || !e.T_ENTREE_SITE) return;
+      const dNew = dureeService_(e), dOld = dureeMin(e.T0, e.T_SORTIE_SITE);
+      if (dNew === null || dOld === null || dNew === dOld) return;
+      const lies = ncs.filter(function(n) { return n.EXP_ID === e.ID && n.TYPE === "RETARD"; });
+      const fauxRetard = dOld > CONFIG.DELAI_MAX_MIN && dNew <= CONFIG.DELAI_MAX_MIN;
+      if (fauxRetard) {
+        const tranchees = lies.filter(function(n) { return n.DECISION && n.DECISION !== "annulee"; });
+        const aAnnuler = lies.filter(sansDecision);
+        const touche = e.STATUT === "retard_a_justifier" || !!e.MOTIF_RETARD || aAnnuler.length > 0;
+        if (!touche && !tranchees.length) return;
+        if (rapport.exemples.length < 8) rapport.exemples.push({ numCmd: e.NUM_CMD_NAV_LOCAL || (e.NUM_EXPEDITION || e.ID), zone: e.ZONE, ancien: dOld, nouveau: dNew });
+        rapport.ncDejaTranchees += tranchees.length;
+        rapport.expeditionsCorrigees++;
+        rapport.ncAnnulees += aAnnuler.length;
+        if (appliquer) {
+          if (e.STATUT === "retard_a_justifier") updateExpCol(e.ID, COL_EXP.STATUT, "sortie");
+          if (!tranchees.length) {
+            if (e.MOTIF_RETARD) updateExpCol(e.ID, COL_EXP.MOTIF_RETARD, "");
+            if (e.COMMENTAIRE_RETARD) updateExpCol(e.ID, COL_EXP.COMMENTAIRE_RETARD, "");
+            if (e.VALIDATION_CONTROLEUR === "contredit") updateExpCol(e.ID, COL_EXP.VALIDATION_CONTROLEUR, "");
+          }
+          aAnnuler.forEach(function(n) {
+            annuler(n, "Annulée : le temps de service se compte depuis l'entrée du client sur place (" + dNew + " min, seuil " +
+              CONFIG.DELAI_MAX_MIN + " min) — l'ancien calcul donnait " + dOld + " min depuis l'annonce du commercial" +
+              (n.MOTIFS ? ". Motifs d'origine : " + n.MOTIFS : ""));
+          });
+        }
+      } else if (dOld > CONFIG.DELAI_MAX_MIN) {
+        // Toujours en retard, mais avec une durée plus courte : on met le détail à jour
+        lies.filter(sansDecision).forEach(function(n) {
+          rapport.ncMisesAJour++;
+          if (appliquer) ncMaj_(sh, n._row, {
+            DETAIL: "Livraison en " + dNew + " min depuis l'entrée du client (seuil " + CONFIG.DELAI_MAX_MIN + " min)",
+            HISTORIQUE: ncHisto_(n.HISTORIQUE, "système", "Durée recalculée depuis l'entrée du client : " + dNew + " min (au lieu de " + dOld + ")"),
+          });
+        });
+      }
+    });
+
+    // 2) Alertes « chargement en cours depuis X min » mesurées depuis l'annonce
+    ncs.forEach(function(n) {
+      if (n.TYPE !== "ATTENTE" || !sansDecision(n) || String(n.DETAIL || "").indexOf("Chargement en cours depuis") !== 0) return;
+      const e = expParId[n.EXP_ID];
+      if (!e || !e.T_ENTREE_SITE) return;
+      const att = Math.round((new Date(ncIso_(n.CREE_LE)).getTime() - new Date(e.T_ENTREE_SITE).getTime()) / 60000);
+      if (att <= CONFIG.NC_CHARGEMENT_MAX_MIN) {
+        rapport.ncAnnulees++;
+        if (appliquer) annuler(n, "Annulée : l'attente se compte depuis l'entrée du client sur place (" + att + " min, seuil " + CONFIG.NC_CHARGEMENT_MAX_MIN + " min)");
+      }
+    });
+    return Object.assign({ ok: true }, rapport);
+  } finally { lock.releaseLock(); }
 }
 
 function adminCompterDonnees(params) {
@@ -3482,7 +3586,7 @@ function jalonSortieSite(params) {
   }
 
   const ts = now();
-  const duree = dureeMin(exp.T0, ts);
+  const duree = dureeMin(debutService_(exp), ts); // depuis l'entrée du client sur place
   const enRetard = duree !== null && duree > CONFIG.DELAI_MAX_MIN;
 
   updateExpCol(expId, COL_EXP.T_SORTIE_SITE, ts);
@@ -3511,7 +3615,7 @@ function jalonSortieSite(params) {
   }
 
   coloriserLigneExp(expId, enRetard);
-  if (enRetard) ncOuvrir_("RETARD", exp, "Livraison en " + duree + " min (seuil " + CONFIG.DELAI_MAX_MIN + " min)", { parEmail: acteurEmail, silencieux: true });
+  if (enRetard) ncOuvrir_("RETARD", exp, "Livraison en " + duree + " min depuis l'entrée du client (seuil " + CONFIG.DELAI_MAX_MIN + " min)", { parEmail: acteurEmail, silencieux: true });
   notifySortieSite(exp, acteurNom, ts, duree, enRetard);
   if (!enRetard) checkCommandeComplete(exp.CMD_ID);
 
@@ -3550,7 +3654,7 @@ function jalonSortieShowroom(params) {
   }
 
   const ts = now();
-  const duree = dureeMin(exp.T0, ts);
+  const duree = dureeMin(debutService_(exp), ts); // depuis l'entrée du client sur place
   const enRetard = duree !== null && duree > CONFIG.DELAI_MAX_MIN;
 
   updateExpCol(expId, COL_EXP.T_SORTIE_SITE, ts);
@@ -3566,7 +3670,7 @@ function jalonSortieShowroom(params) {
   }
 
   coloriserLigneExp(expId, enRetard);
-  if (enRetard) ncOuvrir_("RETARD", exp, "Livraison en " + duree + " min (seuil " + CONFIG.DELAI_MAX_MIN + " min)", { parEmail: acteurEmail, silencieux: true });
+  if (enRetard) ncOuvrir_("RETARD", exp, "Livraison en " + duree + " min depuis l'entrée du client (seuil " + CONFIG.DELAI_MAX_MIN + " min)", { parEmail: acteurEmail, silencieux: true });
   notifySortieShowroom(exp, acteurNom, ts, duree, enRetard);
   if (!enRetard) checkCommandeComplete(exp.CMD_ID);
 
@@ -3673,7 +3777,7 @@ function getRetardsAJustifier(params) {
     numeroBL: e.NUMERO_BL || null,
     responsableEmail: e.RESPONSABLE_EMAIL || null,
     chefPosteEmail: e.CHEF_POSTE_EMAIL || null,
-    dureeService: dureeMin(e.T0, e.T_SORTIE_SITE),  // Bug #1 fix : T3 → T_SORTIE_SITE
+    dureeService: dureeService_(e),  // depuis l'entrée du client sur place
   }));
 }
 
@@ -3764,9 +3868,10 @@ function getKpi(params) {
   const avecSortie = exps.filter(e => e.T_SORTIE_SITE && e.T0);
   const avecT1T2 = exps.filter(e => e.T1 && e.T2);
 
-  const dureesService = avecSortie.map(e => dureeMin(e.T0, e.T_SORTIE_SITE)).filter(d => d !== null);
+  const dureesService = avecSortie.map(e => dureeService_(e)).filter(d => d !== null);
   const dureesPrep    = avecT1T2.map(e => dureeMin(e.T1, e.T2)).filter(d => d !== null);
-  const dureesAttente = exps.filter(e => e.T0 && e.T1).map(e => dureeMin(e.T0, e.T1)).filter(d => d !== null);
+  // Attente avant l'arrivée du client : de l'annonce du commercial à l'entrée sur site (hors temps de service)
+  const dureesAttente = exps.filter(e => e.T0 && e.T_ENTREE_SITE).map(e => dureeMin(e.T0, e.T_ENTREE_SITE)).filter(d => d !== null);
 
   const avg = arr => arr.length ? Math.round(arr.reduce((a,b)=>a+b,0)/arr.length) : null;
   const med = arr => {
@@ -3781,7 +3886,7 @@ function getKpi(params) {
   const zones = ["Showroom","Parc Acier","Dépôt Quincaillerie"];
   const parZone = zones.map(z => {
     const ze = avecSortie.filter(e => e.ZONE === z);
-    const durees = ze.map(e => dureeMin(e.T0, e.T_SORTIE_SITE)).filter(d=>d!==null);
+    const durees = ze.map(e => dureeService_(e)).filter(d=>d!==null);
     return {
       zone: z, total: ze.length,
       sous30: durees.filter(d=>d<=30).length,
@@ -3823,7 +3928,7 @@ function getKpi(params) {
   ncsExp.forEach(n => {
     const imp = ncImputation_(n.IMPUTATION) || "magasin";
     if (n.TYPE === "SORTIE_SANS_PHOTOS") sansPhotos[n.EXP_ID] = true;
-    if ((n.TYPE === "RETARD" || n.TYPE === "ATTENTE") && n.DECISION) {
+    if ((n.TYPE === "RETARD" || n.TYPE === "ATTENTE") && n.DECISION && n.DECISION !== "annulee") {
       causes[imp] = (causes[imp] || 0) + 1;
       if (n.DECISION === "acceptee" && imp !== "magasin") excuses[n.EXP_ID] = imp;
     }
@@ -3839,7 +3944,7 @@ function getKpi(params) {
     const email = (e.RESPONSABLE_EMAIL || "").toLowerCase();
     if (!email) return;
     if (!parResp[email]) parResp[email] = { email, total: 0, sous30: 0, excuses: 0, durees: [] };
-    const d = dureeMin(e.T0, e.T_SORTIE_SITE);
+    const d = dureeService_(e);
     parResp[email].total++;
     if (d !== null) {
       parResp[email].durees.push(d);

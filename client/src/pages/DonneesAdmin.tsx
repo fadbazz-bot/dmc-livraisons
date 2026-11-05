@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArchiveRestore, RefreshCw, Search, Trash2, TriangleAlert, X } from "lucide-react";
-import { api, type DonneesOnglet, type LotCorbeille } from "@/api/appsScript";
+import { api, type DonneesOnglet, type LotCorbeille, type RapportTempsService } from "@/api/appsScript";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/Toast";
 import { Modal } from "@/components/Modal";
@@ -87,6 +87,8 @@ export default function DonneesAdminPage() {
           })}
         </div>
       </PageHeader>
+
+      <RecalculTemps email={email} />
 
       {onglet === CORBEILLE ? <CorbeilleVue email={email} /> : <OngletVue key={onglet} email={email} table={onglet} />}
     </div>
@@ -537,6 +539,70 @@ function CorbeilleVue({ email }: { email: string }) {
           onConfirm={() => vider.mutate()}
           libelleBouton="Supprimer définitivement"
         />
+      )}
+    </div>
+  );
+}
+
+
+// ─── Recalcul des temps de service (nettoyage des retards faussés) ────────────
+
+function RecalculTemps({ email }: { email: string }) {
+  const toast = useToast();
+  const qc = useQueryClient();
+  const [rapport, setRapport] = useState<RapportTempsService | null>(null);
+  const m = useMutation({
+    mutationFn: (appliquer: boolean) => api.admin.recalculerTempsService(email, appliquer),
+    onSuccess: (r) => {
+      setRapport(r);
+      if (r.appliquer) {
+        toast.success("Données corrigées");
+        qc.invalidateQueries();
+      }
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erreur"),
+  });
+  const rien = rapport && rapport.expeditionsCorrigees === 0 && rapport.ncAnnulees === 0 && rapport.ncMisesAJour === 0;
+  return (
+    <div className="mx-4 mt-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 sm:mx-6">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="font-semibold">Temps de service : recalcul depuis l'entrée du client</div>
+          <div className="text-xs text-sky-800">
+            Les retards sont désormais comptés à partir de l'entrée du client sur place (et non de l'annonce du commercial).
+            Cet outil corrige les anciennes données : faux retards, non-conformités sans décision, durées. Les non-conformités déjà tranchées ne sont jamais modifiées.
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button className="btn-outline" disabled={m.isPending} onClick={() => m.mutate(false)}>
+            {m.isPending && !rapport?.appliquer ? "Analyse…" : "Vérifier (aperçu)"}
+          </button>
+          {rapport && !rapport.appliquer && !rien && (
+            <button className="btn-primary" disabled={m.isPending} onClick={() => m.mutate(true)}>Appliquer la correction</button>
+          )}
+        </div>
+      </div>
+      {rapport && (
+        <div className="mt-2 rounded-md bg-white/70 p-2 text-xs">
+          {rien ? (
+            <span>Rien à corriger.</span>
+          ) : (
+            <>
+              <div className="font-medium">
+                {rapport.appliquer ? "Corrigé : " : "À corriger : "}
+                {rapport.expeditionsCorrigees} livraison(s) à tort en retard · {rapport.ncAnnulees} non-conformité(s) annulée(s) · {rapport.ncMisesAJour} durée(s) mise(s) à jour
+                {rapport.ncDejaTranchees > 0 && ` · ${rapport.ncDejaTranchees} déjà tranchée(s) par le coordinateur (non modifiées)`}
+              </div>
+              {rapport.exemples.length > 0 && (
+                <ul className="mt-1 space-y-0.5 text-slate-600">
+                  {rapport.exemples.map((x, i) => (
+                    <li key={i}>{x.numCmd} · {x.zone} : <span className="line-through">{x.ancien} min</span> → <strong>{x.nouveau} min</strong></li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+        </div>
       )}
     </div>
   );

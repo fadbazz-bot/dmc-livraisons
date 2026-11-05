@@ -407,6 +407,8 @@ export interface FriseSegment {
   enCours: boolean;
   /** Causes les plus plausibles d'un retard sur cette étape (codes d'imputation). */
   suggestions: string[];
+  /** Étape qui ne compte pas dans les 30 minutes (avant l'arrivée du client sur place) */
+  horsDelai?: boolean;
 }
 
 export interface FriseJalon {
@@ -442,6 +444,10 @@ export interface FriseLivraison {
   termine: boolean;
   depasseMin: number;
   plusLongue: string;
+  /** Le client est-il entré sur le site ? Le chrono des 30 min démarre à ce moment-là. */
+  clientSurPlace?: boolean;
+  /** Attente entre l'annonce du commercial et l'arrivée du client (analyse, hors délai) */
+  attenteClientMin?: number | null;
   jalons: FriseJalon[];
   segments: FriseSegment[];
   evenements?: FriseEvenement[];
@@ -548,7 +554,20 @@ export interface LotCorbeille {
   exemples: string[];
 }
 
+export interface RapportTempsService {
+  ok: true;
+  appliquer: boolean;
+  expeditionsCorrigees: number;
+  ncAnnulees: number;
+  ncMisesAJour: number;
+  ncDejaTranchees: number;
+  exemples: { numCmd: string; zone: string; ancien: number; nouveau: number }[];
+}
+
 export const admin = {
+  /** Recalcule les temps de service depuis l'entrée du client ; appliquer=false → aperçu seulement */
+  recalculerTempsService: (acteurEmail: string, appliquer: boolean) =>
+    apiPost<RapportTempsService>("adminRecalculerTempsService", { acteurEmail, appliquer }),
   compter: (acteurEmail: string) =>
     apiGet<{ ok: true; comptes: Record<string, number> }>("adminCompterDonnees", { acteurEmail }),
   lister: (acteurEmail: string, table: string) =>

@@ -85,7 +85,7 @@ export default function DashboardPage() {
                 icon={Target}
                 title="% Service ≤ 30 min"
                 value={kpi.pct30min !== null ? `${kpi.pct30min}%` : "—"}
-                hint={`${kpi.terminees} sorties validées`}
+                hint={`${kpi.terminees} sorties · depuis l'entrée du client`}
                 colorClass={kpiColorClass(kpi.pct30min)}
               />
               <Card
@@ -96,11 +96,11 @@ export default function DashboardPage() {
               />
               <Card
                 icon={Clock}
-                title="Attente feu vert"
+                title="Attente du client"
                 value={
                   kpi.moyenneAttenteFeuVert !== null ? formatDuree(kpi.moyenneAttenteFeuVert) : "—"
                 }
-                hint="T0 → arrivée site"
+                hint="Annonce du commercial → entrée sur site (hors des 30 min)"
               />
               <Card
                 icon={Package}
