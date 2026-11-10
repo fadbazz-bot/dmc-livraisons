@@ -389,6 +389,28 @@ export interface NcListe {
   imputations?: Imputation[];
 }
 
+export interface LivraisonBloquee {
+  expId: string;
+  numCmd: string;
+  client: string;
+  zone: string;
+  statut: string;
+  showroom: boolean;
+  plaque: string;
+  chauffeur: string;
+  entreeAt: string | null;
+  arriveeAt: string | null;
+  photosAt: string | null;
+  derniereActiviteAt: string | null;
+  ageH: number;
+  tentatives: { at: string; acteurNom: string; message: string }[];
+  nbTentatives: number;
+  erreursDrive: number;
+  suggestionAt: string | null;
+  suggestionSource: string;
+  suggestionDureeMin: number;
+}
+
 export interface Imputation {
   code: string;
   label: string;
@@ -483,6 +505,18 @@ export const nonConformites = {
   /** Frise détaillée d'une livraison (durée de chaque étape + journal) */
   frise: (acteurEmail: string, expId: string) =>
     apiGet<FriseLivraison>("getFriseExpedition", { acteurEmail, expId }),
+  /** Livraisons entrées sur site mais jamais sorties (heures connues, tentatives refusées, heure proposée) */
+  bloquees: (acteurEmail: string, seuilH?: number) =>
+    apiGet<{ livraisons: LivraisonBloquee[]; delaiMaxMin: number }>(
+      "getLivraisonsBloquees",
+      seuilH ? { acteurEmail, seuilH } : { acteurEmail },
+    ),
+  /** Fixe l'heure de sortie réelle de livraisons restées bloquées (tracé) */
+  regulariser: (input: { acteurEmail: string; items: { expId: string; sortieAt: string }[]; commentaire: string }) =>
+    apiPost<{ ok: true; traitees: { expId: string; numCmd: string; dureeMin: number | null; enRetard: boolean }[]; ignorees: { expId: string; raison: string }[] }>(
+      "regulariserSorties",
+      input,
+    ),
   /** Frises des livraisons récentes (coordinateur / admin) */
   frises: (acteurEmail: string, depuis?: string) =>
     apiGet<{ liste: FriseLivraison[]; imputations: Imputation[] }>(

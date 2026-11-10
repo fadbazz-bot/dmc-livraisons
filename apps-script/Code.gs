@@ -181,6 +181,7 @@ function doPost(e) {
 }
 
 function handleRequest(e) {
+  var ctxEchec = null; // contexte pour journaliser une validation refusée (heure de la tentative)
   try {
     // Lire l'action depuis GET params ou POST body (JSON ou form-encoded)
     var action = e.parameter.action;
@@ -225,6 +226,7 @@ function handleRequest(e) {
       parsedParams[k] = v;
     });
     const params = Object.assign({}, parsedParams, body);
+    ctxEchec = { action: action, expId: params.expId, email: params.acteurEmail, nom: params.acteurNom };
 
     const routes = {
       // Auth
@@ -268,6 +270,8 @@ function handleRequest(e) {
       "getNonConformites":            () => getNonConformites(params),
       "getFriseExpedition":           () => getFriseExpedition(params),
       "getFrisesLivraisons":          () => getFrisesLivraisons(params),
+      "getLivraisonsBloquees":  () => getLivraisonsBloquees(params),
+      "regulariserSorties":     () => regulariserSorties(params),
       "justifierNonConformite":       () => justifierNonConformite(params),
       "preciserNonConformite":        () => preciserNonConformite(params),
       "decisionNonConformite":        () => decisionNonConformite(params),
@@ -351,6 +355,7 @@ function handleRequest(e) {
     return jsonResponse(result);
 
   } catch(err) {
+    journaliserEchec_(ctxEchec, err);
     return jsonResponse({ error: err.message, stack: err.stack }, 500);
   }
 }
@@ -1837,6 +1842,7 @@ const NC_IMPUTATIONS = {
   showroom:   "Agent showroom",
   commercial: "Commercial (instruction tardive ou incomplète)",
   client:     "Client / chauffeur (arrivée tardive, trajet)",
+  systeme:    "Incident technique (application, Drive, réseau)",
   autre:      "Autre cause indépendante du magasin",
 };
 
@@ -2038,7 +2044,7 @@ const FRISE_JALONS = {
   entree: ["ENTREE_SITE", "ENTREE_SHOWROOM", "ENTREE_TRANSFEREE"],
   magasin: ["SAISIE_CODE"],
   photos: ["PHOTOS_CHARGEMENT"],
-  sortie: ["SORTIE_SITE", "SORTIE_SHOWROOM"],
+  sortie: ["SORTIE_SITE", "SORTIE_SHOWROOM", "SORTIE_REGULARISEE"],
 };
 
 function friseMs_(v) {
@@ -2809,6 +2815,132 @@ function adminRecalculerTempsService(params) {
   } finally { lock.releaseLock(); }
 }
 
+// ─── VALIDATIONS REFUSÉES + LIVRAISONS BLOQUÉES ────────────────────────────────
+//
+// Quand une validation échoue (photo refusée, Drive, réseau, règle métier…), l'heure de la tentative est
+// inscrite dans EVENEMENTS (jalon TENTATIVE_ECHOUEE) : on sait qui a essayé, quand, et quel message est apparu.
+// Une livraison restée bloquée (véhicule parti, saisie jamais passée) peut ensuite être « régularisée » :
+// le coordinateur / l'admin fixe l'heure de sortie réelle, au lieu de laisser courir un chronomètre de 200 h.
+
+const ACTIONS_JOURNALISEES = ["jalon_entree_site", "jalon_entree_showroom", "jalon_sortie_showroom", "jalon_saisie_code",
+  "jalon_sortie_site", "jalon_t3", "jalon_chargement_fini", "addPhotoChargement"];
+
+function journaliserEchec_(ctx, err) {
+  try {
+    if (!ctx || !ctx.expId || ACTIONS_JOURNALISEES.indexOf(ctx.action) === -1) return;
+    addEvenement(String(ctx.expId), "TENTATIVE_ECHOUEE", ctx.email || "", ctx.nom || "", now(),
+      ctx.action + " — " + String((err && err.message) || err).replace(/\s+/g, " ").substring(0, 300));
+  } catch (e) { console.error("journaliserEchec_ : " + e.message); }
+}
+
+const BLOQUEES_EXCLUS = ["sortie", "retard_a_justifier", "annulee", "annule", "supprimee", "en_attente", "archivee"];
+
+/** Livraisons entrées sur site mais jamais sorties (en base), avec toutes les heures connues. */
+function getLivraisonsBloquees(params) {
+  const u = ncUser_(params.acteurEmail);
+  if (["admin", "coordinateur", "controleur"].indexOf(u.ROLE) === -1) throw new Error("Réservé au coordinateur");
+  const seuilMs = (Number(params.seuilH) > 0 ? Number(params.seuilH) : 3) * 3600000;
+  const cmds = {};
+  sheetToObjects(getSheet("COMMANDES"), COL_CMD).forEach(function(c) { cmds[c.ID] = c; });
+  const exps = sheetToObjects(getSheet("EXPEDITIONS"), COL_EXP).filter(function(e) {
+    if (!e.ID || e.ARCHIVED_AT || e.MODE_LIVRAISON === "interne") return false;
+    if (!e.T_ENTREE_SITE || e.T_SORTIE_SITE) return false;
+    if (BLOQUEES_EXCLUS.indexOf(String(e.STATUT || "").toLowerCase()) !== -1) return false;
+    const t = friseMs_(e.T_ENTREE_SITE);
+    if (t === null || Date.now() - t < seuilMs) return false;
+    return ncVisible_(u, { SITE: (cmds[e.CMD_ID] || {}).SITE || "", ZONE: e.ZONE, RESPONSABLE_EMAIL: "" });
+  });
+  const ids = {};
+  exps.forEach(function(e) { ids[e.ID] = []; });
+  sheetToObjects(getSheet("EVENEMENTS"), COL_EVT).forEach(function(ev) { if (ids[ev.EXP_ID]) ids[ev.EXP_ID].push(ev); });
+  const noms = friseNoms_();
+  const liste = exps.map(function(e) {
+    const cmd = cmds[e.CMD_ID] || {};
+    const evts = ids[e.ID].sort(function(a, b) { return (friseMs_(a.TIMESTAMP) || 0) - (friseMs_(b.TIMESTAMP) || 0); });
+    const tentatives = evts.filter(function(x) { return x.JALON === "TENTATIVE_ECHOUEE"; }).map(function(x) {
+      return { at: ncIso_(x.TIMESTAMP), acteurNom: x.ACTEUR_NOM || noms[String(x.ACTEUR_EMAIL || "").toLowerCase()] || x.ACTEUR_EMAIL || "", message: x.COMMENTAIRE || "" };
+    });
+    const erreursDrive = evts.filter(function(x) { return x.JALON === "ERREUR_DRIVE"; }).length;
+    const activites = evts.filter(function(x) { return ["SAISIE_CODE", "PHOTOS_CHARGEMENT", "ERREUR_DRIVE"].indexOf(x.JALON) !== -1; });
+    const derniereAct = activites.length ? friseMs_(activites[activites.length - 1].TIMESTAMP) : null;
+    const tEntree = friseMs_(e.T_ENTREE_SITE);
+    const tArrivee = friseMs_(e.T_CHARGEMENT_FINI);
+    const tPhotos = (function() { const p = evts.filter(function(x) { return x.JALON === "PHOTOS_CHARGEMENT"; }); return p.length ? friseMs_(p[p.length - 1].TIMESTAMP) : null; })();
+    // Heure proposée : première tentative de sortie refusée, sinon dernière action connue, sinon l'arrivée au magasin
+    const tentSortie = tentatives.filter(function(x) { return /^(jalon_sortie_site|jalon_sortie_showroom|jalon_t3)/.test(x.message); })[0] || null;
+    let sug = null, source = "";
+    if (tentSortie) { sug = new Date(tentSortie.at).getTime(); source = "Première tentative de sortie refusée"; }
+    else if (derniereAct !== null) { sug = derniereAct; source = "Dernière action enregistrée au magasin"; }
+    else if (tArrivee !== null) { sug = tArrivee; source = "Arrivée validée au magasin"; }
+    else { sug = tEntree; source = "Entrée sur le site (aucune autre action enregistrée)"; }
+    const iso = function(ms) { return ms === null || ms === undefined ? null : new Date(ms).toISOString(); };
+    return {
+      expId: e.ID, numCmd: e.NUM_CMD_NAV_LOCAL || cmd.NUM_CMD_NAV || "", client: cmd.NOM_CLIENT || "", zone: e.ZONE || "",
+      statut: e.STATUT || "", showroom: ncCategorieZone_(e.ZONE) === "showroom", plaque: e.PLAQUE || "", chauffeur: e.CHAUFFEUR || "",
+      entreeAt: iso(tEntree), arriveeAt: iso(tArrivee), photosAt: iso(tPhotos), derniereActiviteAt: iso(derniereAct),
+      ageH: Math.round((Date.now() - tEntree) / 360000) / 10,
+      tentatives: tentatives.slice(-10), nbTentatives: tentatives.length, erreursDrive: erreursDrive,
+      suggestionAt: iso(sug), suggestionSource: source,
+      suggestionDureeMin: Math.max(0, Math.round((sug - tEntree) / 60000)),
+    };
+  });
+  liste.sort(function(a, b) { return String(a.entreeAt).localeCompare(String(b.entreeAt)); });
+  return { ok: true, livraisons: liste, delaiMaxMin: CONFIG.DELAI_MAX_MIN };
+}
+
+/**
+ * Régularise la sortie de livraisons restées bloquées. items = [{ expId, sortieAt }] (sortieAt ISO).
+ * Le temps de service s'arrête à l'heure choisie ; l'opération est tracée (qui, quand, pourquoi).
+ */
+function regulariserSorties(params) {
+  const u = ncUser_(params.acteurEmail);
+  if (["admin", "coordinateur", "controleur"].indexOf(u.ROLE) === -1) throw new Error("Réservé au coordinateur");
+  const items = Array.isArray(params.items) ? params.items : [];
+  if (!items.length) throw new Error("Aucune livraison à régulariser");
+  const comm = String(params.commentaire || "").trim();
+  if (comm.length < 5) throw new Error("Indique la raison de la régularisation (5 caractères minimum)");
+  const exps = {};
+  sheetToObjects(getSheet("EXPEDITIONS"), COL_EXP).forEach(function(e) { exps[e.ID] = e; });
+  const qui = u.NOM || u.EMAIL;
+  const traitees = [], ignorees = [];
+  items.forEach(function(it) {
+    const e = exps[String(it.expId || "")];
+    try {
+      if (!e) throw new Error("livraison introuvable");
+      if (!e.T_ENTREE_SITE) throw new Error("jamais entrée sur le site");
+      if (e.T_SORTIE_SITE) throw new Error("déjà sortie");
+      const t = new Date(it.sortieAt).getTime();
+      if (isNaN(t)) throw new Error("heure invalide");
+      const tEntree = new Date(e.T_ENTREE_SITE).getTime();
+      if (t < tEntree) throw new Error("l'heure de sortie précède l'entrée");
+      if (t > Date.now() + 60000) throw new Error("l'heure de sortie est dans le futur");
+      const ts = new Date(t).toISOString();
+      const duree = dureeMin(e.T_ENTREE_SITE, ts);
+      const enRetard = duree !== null && duree > CONFIG.DELAI_MAX_MIN;
+      updateExpCol(e.ID, COL_EXP.T_SORTIE_SITE, ts);
+      updateExpCol(e.ID, COL_EXP.STATUT, enRetard ? "retard_a_justifier" : "sortie");
+      addEvenement(e.ID, "SORTIE_REGULARISEE", u.EMAIL, qui, ts,
+        "Sortie régularisée par " + qui + " le " + Utilities.formatDate(new Date(), "Africa/Dakar", "dd/MM/yyyy HH:mm") +
+        " — heure retenue : " + Utilities.formatDate(new Date(t), "Africa/Dakar", "dd/MM/yyyy HH:mm") + " — " + comm);
+      // Alertes « attente / blocage anormal » sans décision : elles mesuraient le blocage de saisie → annulées
+      const sh = ncSheet_();
+      ncRead_().filter(function(n) {
+        return n.EXP_ID === e.ID && n.TYPE === "ATTENTE" && !n.DECISION && ["ouverte", "contestee", "expliquee"].indexOf(n.STATUT) !== -1;
+      }).forEach(function(n) {
+        ncMaj_(sh, n._row, { STATUT: "cloturee", DECISION: "annulee", DECISION_LE: now(), CLOTURE_LE: now(), IMPUTATION: "systeme",
+          HISTORIQUE: ncHisto_(n.HISTORIQUE, qui, "Annulée : sortie régularisée à l'heure réelle (" + duree + " min depuis l'entrée du client). " + comm) });
+      });
+      coloriserLigneExp(e.ID, enRetard);
+      if (enRetard) ncOuvrir_("RETARD", e, "Livraison en " + duree + " min depuis l'entrée du client (seuil " + CONFIG.DELAI_MAX_MIN + " min) — sortie régularisée", { parEmail: u.EMAIL, silencieux: true });
+      else checkCommandeComplete(e.CMD_ID);
+      traitees.push({ expId: e.ID, numCmd: e.NUM_CMD_NAV_LOCAL || "", dureeMin: duree, enRetard: enRetard });
+    } catch (err) {
+      ignorees.push({ expId: String(it.expId || ""), raison: err.message });
+    }
+  });
+  return { ok: true, traitees: traitees, ignorees: ignorees };
+}
+
 function adminCompterDonnees(params) {
   assertAdmin(params.acteurEmail);
   const out = {};
@@ -3267,6 +3399,20 @@ function terminerPhotosChargement(params) {
 function testDrive() {
   const f = getPhotosRootFolder_();
   Logger.log("Dossier racine Drive : " + f.getUrl());
+  // Test complet d'écriture (créer un dossier + un fichier, puis les mettre à la corbeille) :
+  // c'est ce qui fait réellement les photos, et ce qui demande l'autorisation Drive COMPLÈTE.
+  const t = f.createFolder("_test_autorisation");
+  const fi = t.createFile("test.txt", "ok");
+  Logger.log("Écriture Drive OK : dossier + fichier créés");
+  fi.setTrashed(true);
+  t.setTrashed(true);
+  // Diagnostic : liste des autorisations réellement accordées au script
+  try {
+    const r = UrlFetchApp.fetch("https://oauth2.googleapis.com/tokeninfo?access_token=" + ScriptApp.getOAuthToken());
+    Logger.log("Autorisations accordées : " + (JSON.parse(r.getContentText()).scope || ""));
+  } catch (e) {
+    Logger.log("Diagnostic des autorisations indisponible : " + e.message);
+  }
   return f.getUrl();
 }
 
@@ -3964,9 +4110,12 @@ function getKpi(params) {
     }
   });
   const parGarde = {};
+  const regularisees = {};
+  sheetToObjects(getSheet("EVENEMENTS"), COL_EVT).forEach(ev => { if (ev.JALON === "SORTIE_REGULARISEE") regularisees[ev.EXP_ID] = true; });
   avecSortie.forEach(e => {
     const email = String(e.CHEF_POSTE_EMAIL || "").toLowerCase();
     if (!email) return;
+    if (regularisees[e.ID]) return; // sortie régularisée après un blocage de saisie : ne compte ni pour ni contre le poste
     const g = parGarde[email] || (parGarde[email] = { email, total: 0, fautes: 0, sortiesLentes: 0, derogations: 0, ncImputees: 0, sorties: [] });
     g.total++;
     let faute = false;

@@ -12,6 +12,7 @@ import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/Toast";
 import { Modal } from "@/components/Modal";
 import { PageHeader } from "@/components/PageHeader";
+import { LivraisonsBloquees } from "@/components/LivraisonsBloquees";
 import { PhotoCapture } from "@/components/PhotoCapture";
 import { MAGASINS } from "@/types/magasins";
 import { PeriodeSelect, SiteMagasinSelect } from "@/components/FiltresPortee";
@@ -22,12 +23,12 @@ import { cn, includesLower } from "@/lib/cn";
 import { useVues, type Vue } from "@/lib/vues";
 
 /** Les vues se répartissent selon « qui doit agir » : c'est la question que tout le monde se pose. */
-type Onglet = "atraiter" | "autres" | "cloturees" | "livraisons" | "chiffres";
-type OngletNc = Exclude<Onglet, "livraisons" | "chiffres">;
+type Onglet = "atraiter" | "autres" | "cloturees" | "livraisons" | "bloquees" | "chiffres";
+type OngletNc = Exclude<Onglet, "livraisons" | "bloquees" | "chiffres">;
 
 /** Le serveur filtre déjà ce que chacun a le droit de voir : l'écran ne doit jamais masquer davantage. */
 const PORTEE_LIBRE: Portee = { siteFixe: null, zoneFixe: null };
-const CAUSES = ["magasin", "garde", "showroom", "commercial", "client", "autre"] as const;
+const CAUSES = ["magasin", "garde", "showroom", "commercial", "client", "systeme", "autre"] as const;
 
 type Acteur = "responsable" | "coordinateur";
 
@@ -151,6 +152,13 @@ export default function NonConformitesMagasinPage() {
   });
   const toutes = useMemo(() => q.data?.liste ?? [], [q.data]);
   const types = q.data?.types ?? [];
+  const qBloquees = useQuery({
+    queryKey: ["bloquees", email],
+    queryFn: () => api.nonConformites.bloquees(email),
+    enabled: !!email && autorise && estControleur,
+    refetchInterval: 120_000,
+  });
+  const nBloquees = qBloquees.data?.livraisons.length ?? 0;
 
   const filtrees = useMemo(
     () =>
@@ -196,7 +204,7 @@ export default function NonConformitesMagasinPage() {
     { key: "atraiter", label: "À traiter", n: parOnglet.atraiter.length, alerte: parOnglet.atraiter.some((x) => x.enRetardJustif || x.enRetardAction) },
     { key: "autres", label: "En attente des autres", n: parOnglet.autres.length },
     { key: "cloturees", label: "Clôturées", n: parOnglet.cloturees.length },
-    ...(estControleur ? [{ key: "livraisons" as Onglet, label: "Livraisons (frise)" }, { key: "chiffres" as Onglet, label: "Chiffres" }] : []),
+    ...(estControleur ? [{ key: "livraisons" as Onglet, label: "Livraisons (frise)" }, { key: "bloquees" as Onglet, label: "Bloquées", n: nBloquees, alerte: nBloquees > 0 }, { key: "chiffres" as Onglet, label: "Chiffres" }] : []),
   ];
   const [onglet, setOnglet] = useVues<Onglet>("/non-conformites", onglets, "atraiter");
 
@@ -212,7 +220,7 @@ export default function NonConformitesMagasinPage() {
   }
 
 
-  const liste = onglet === "chiffres" || onglet === "livraisons" ? [] : parOnglet[onglet];
+  const liste = onglet === "chiffres" || onglet === "livraisons" || onglet === "bloquees" ? [] : parOnglet[onglet];
 
   return (
     <div className="h-full flex flex-col">
@@ -280,6 +288,7 @@ export default function NonConformitesMagasinPage() {
             >
               {o.key === "chiffres" && <BarChart3 className="h-4 w-4" />}
               {o.key === "livraisons" && <GanttChartSquare className="h-4 w-4" />}
+              {o.key === "bloquees" && <AlertTriangle className="h-4 w-4" />}
               {o.label}
               {o.n !== undefined && (
                 <span className={cn("num text-xs rounded-full px-1.5 py-0.5", o.alerte ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-600")}>
@@ -292,15 +301,15 @@ export default function NonConformitesMagasinPage() {
       </PageHeader>
 
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-        {onglet !== "chiffres" && onglet !== "livraisons" && <GuideParcours />}
-        {onglet !== "livraisons" && masquees > 0 && (
+        {onglet !== "chiffres" && onglet !== "livraisons" && onglet !== "bloquees" && <GuideParcours />}
+        {onglet !== "livraisons" && onglet !== "bloquees" && masquees > 0 && (
           <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
             {masquees} non-conformité(s) encore ouverte(s) sont masquées par vos filtres (recherche, type, site ou magasin).
           </div>
         )}
-        {onglet !== "livraisons" && q.isLoading ? (
+        {onglet !== "livraisons" && onglet !== "bloquees" && q.isLoading ? (
           <div className="card p-6 text-center text-sm text-slate-500">Chargement…</div>
-        ) : onglet !== "livraisons" && q.error ? (
+        ) : onglet !== "livraisons" && onglet !== "bloquees" && q.error ? (
           <div className="card p-6 border-red-200 bg-red-50 text-sm text-red-700">
             {q.error instanceof Error ? q.error.message : "Erreur"}
           </div>
@@ -315,6 +324,8 @@ export default function NonConformitesMagasinPage() {
             ncParExp={ncParExp}
             onOuvrirNc={(id) => setOuvert(id)}
           />
+        ) : onglet === "bloquees" ? (
+          <LivraisonsBloquees email={email} />
         ) : onglet === "chiffres" ? (
           <Suivi liste={filtrees} periode={periode} />
         ) : liste.length === 0 ? (
@@ -788,6 +799,7 @@ const JALON_LABEL: Record<string, string> = {
   PLAQUE_DIFFERENTE: "Plaque différente", ALERTE_VALIDATION_RAPIDE: "Validation très rapide", DEROGATION_PHOTOS: "Dérogation photos",
   ETAPE_ANNULEE: "Étape annulée", NC_OUVERTE: "Non-conformité ouverte", JUSTIF: "Justification", CTRL_OK: "Justificatif validé",
   CTRL_NOK: "Justificatif contredit", CODE_FAIL: "Code incorrect", CHARGEMENT_PARTIEL: "Chargement partiel",
+  TENTATIVE_ECHOUEE: "Validation refusée (tentative)", SORTIE_REGULARISEE: "Sortie régularisée", ERREUR_DRIVE: "Photo : Drive indisponible",
 };
 
 /** Journal complet des événements de la livraison (replié par défaut). */

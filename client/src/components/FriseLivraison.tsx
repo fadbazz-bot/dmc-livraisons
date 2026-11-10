@@ -11,6 +11,7 @@ export const IMPUTATION_COURT: Record<string, string> = {
   showroom: "Agent showroom",
   commercial: "Commercial",
   client: "Client / chauffeur",
+  systeme: "Incident technique",
   autre: "Autre cause",
 };
 
