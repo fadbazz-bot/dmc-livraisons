@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Clock, RefreshCw } from "lucide-react";
-import { api, type LivraisonBloquee } from "@/api/appsScript";
+import { api, type AgentSortie, type LivraisonBloquee } from "@/api/appsScript";
 import { useToast } from "@/components/Toast";
 import { formatDateTime, formatDuree } from "@/lib/format";
 import { cn } from "@/lib/cn";
@@ -47,9 +47,18 @@ export function LivraisonsBloquees({ email }: { email: string }) {
   // heure choisie par livraison (par défaut : l'heure proposée par le serveur) et sélection
   const [heures, setHeures] = useState<Record<string, string>>({});
   const [coches, setCoches] = useState<Set<string>>(new Set());
-  const [raison, setRaison] = useState("Sortie non validée au poste : problème technique de saisie (photos / Drive). Heure retenue = dernière action connue.");
+  const [raison, setRaison] = useState("Sortie non enregistrée dans l'application. Heure de sortie retenue d'après les dernières actions connues.");
+
+  const [causes, setCauses] = useState<Record<string, string>>({});
+  const [personnes, setPersonnes] = useState<Record<string, string>>({});
+  const agents = useMemo(() => q.data?.agents ?? [], [q.data]);
 
   const heureDe = (l: LivraisonBloquee) => heures[l.expId] ?? versLocal(l.suggestionAt);
+  /** Par défaut, le blocage est imputé au poste de garde (ou à l'agent showroom pour le showroom). */
+  const causeDe = (l: LivraisonBloquee) => causes[l.expId] ?? (l.showroom ? "showroom" : "garde");
+  const agentsDe = (l: LivraisonBloquee): AgentSortie[] =>
+    agents.filter((a) => a.role === (l.showroom ? "agent_showroom" : "chef_poste") && (!a.site || !l.site || a.site === l.site));
+  const personneDe = (l: LivraisonBloquee) => personnes[l.expId] ?? (agentsDe(l).some((a) => a.email.toLowerCase() === l.posteEmail.toLowerCase()) ? l.posteEmail : (agentsDe(l)[0]?.email ?? l.posteEmail));
   const bascule = (id: string) =>
     setCoches((c) => {
       const n = new Set(c);
@@ -61,7 +70,11 @@ export function LivraisonsBloquees({ email }: { email: string }) {
     mutationFn: () => {
       const items = liste
         .filter((l) => coches.has(l.expId))
-        .map((l) => ({ expId: l.expId, sortieAt: new Date(heureDe(l)).toISOString() }));
+        .map((l) => {
+          const c = causeDe(l);
+          const poste = c === "garde" || c === "showroom";
+          return { expId: l.expId, sortieAt: new Date(heureDe(l)).toISOString(), imputation: c, imputeA: poste ? personneDe(l) : undefined };
+        });
       return api.nonConformites.regulariser({ acteurEmail: email, items, commentaire: raison.trim() });
     },
     onSuccess: (r) => {
@@ -74,7 +87,11 @@ export function LivraisonsBloquees({ email }: { email: string }) {
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Erreur"),
   });
 
-  const invalides = liste.some((l) => coches.has(l.expId) && (!heureDe(l) || isNaN(new Date(heureDe(l)).getTime())));
+  const invalides = liste.some(
+    (l) =>
+      coches.has(l.expId) &&
+      (!heureDe(l) || isNaN(new Date(heureDe(l)).getTime()) || ((causeDe(l) === "garde" || causeDe(l) === "showroom") && !personneDe(l))),
+  );
   const peutValider = coches.size > 0 && raison.trim().length >= 5 && !invalides && !m.isPending;
 
   if (q.isLoading) return <div className="card p-6 text-center text-sm text-slate-500">Chargement…</div>;
@@ -99,7 +116,8 @@ export function LivraisonsBloquees({ email }: { email: string }) {
             <strong>{liste.length} livraison(s) sans sortie enregistrée depuis plus de 3 h.</strong> Leur durée augmente sans fin tant que
             la sortie n'est pas validée. Pour chacune, vérifiez que le véhicule est bien parti, ajustez l'heure de sortie réelle,
             cochez-la et régularisez : le temps de service s'arrête à cette heure, et la correction est tracée (qui, quand, pourquoi).
-            Une alerte « attente / blocage anormal » non traitée est alors annulée. Si la durée corrigée dépasse {seuil} min, un retard reste ouvert.
+            Choisissez aussi à qui imputer le blocage : par défaut le poste de garde (ou l'agent showroom), avec la personne en cause ;
+            la faute est alors comptée dans sa notation. Pour un incident technique, l'alerte « attente anormale » est annulée. Si la durée corrigée dépasse {seuil} min, un retard reste ouvert.
           </div>
         </div>
       </div>
@@ -156,6 +174,26 @@ export function LivraisonsBloquees({ email }: { email: string }) {
                     onChange={(e) => { setHeures((x) => ({ ...x, [l.expId]: e.target.value })); }}
                   />
                 </div>
+                <div>
+                  <div className="text-xs text-slate-500 mb-0.5">À qui imputer le blocage ?</div>
+                  <select className="input !py-1.5 text-sm" value={causeDe(l)} onChange={(e) => setCauses((x) => ({ ...x, [l.expId]: e.target.value }))}>
+                    <option value={l.showroom ? "showroom" : "garde"}>{l.showroom ? "Agent showroom (suivi des sorties)" : "Poste de garde"}</option>
+                    <option value="magasin">Le magasin (à expliquer par le responsable)</option>
+                    <option value="systeme">Incident technique (personne)</option>
+                    <option value="autre">Autre cause (personne)</option>
+                  </select>
+                </div>
+                {(causeDe(l) === "garde" || causeDe(l) === "showroom") && (
+                  <div>
+                    <div className="text-xs text-slate-500 mb-0.5">Personne en cause</div>
+                    <select className="input !py-1.5 text-sm" value={personneDe(l)} onChange={(e) => setPersonnes((x) => ({ ...x, [l.expId]: e.target.value }))}>
+                      {agentsDe(l).map((a) => (
+                        <option key={a.email} value={a.email}>{a.nom}{a.email.toLowerCase() === l.posteEmail.toLowerCase() ? " (a validé l'entrée)" : ""}</option>
+                      ))}
+                      {agentsDe(l).length === 0 && <option value={l.posteEmail}>{l.posteNom || l.posteEmail || "—"}</option>}
+                    </select>
+                  </div>
+                )}
                 <div className="text-xs text-slate-600 pb-1.5">
                   Proposée : <strong>{l.suggestionSource.toLowerCase()}</strong>
                   {duree !== null && (

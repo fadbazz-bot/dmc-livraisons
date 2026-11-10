@@ -607,7 +607,8 @@ function Fiche({ n, estControleur, onClose }: { n: NonConformite; estControleur:
           <div className="rounded-lg bg-sky-50 border border-sky-200 p-3 text-sm text-sky-900">
             <span className="text-xs font-medium block">Cause identifiée</span>
             {n.imputationLabel}
-            <span className="block text-xs text-sky-700">Ce retard n'est pas imputé au magasin.</span>
+            {n.imputeANom && <span className="block font-medium">Responsabilité portée par : {n.imputeANom}</span>}
+            <span className="block text-xs text-sky-700">{n.imputeANom ? "Cette faute est comptée dans la notation de cette personne." : "Ce retard n'est pas imputé au magasin."}</span>
           </div>
         )}
 

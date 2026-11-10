@@ -369,6 +369,9 @@ export interface NonConformite {
   /** Cause réelle du retard quand elle n'est pas le magasin (renseignée après enquête). Vide = le magasin. */
   imputation: string;
   imputationLabel: string;
+  /** Personne désignée comme responsable du blocage (poste de garde / agent showroom) */
+  imputeA?: string;
+  imputeANom?: string;
   controleurEmail: string;
   decision: string;
   decisionLe: string | null;
@@ -389,8 +392,18 @@ export interface NcListe {
   imputations?: Imputation[];
 }
 
+export interface AgentSortie {
+  email: string;
+  nom: string;
+  role: string;
+  site: string;
+}
+
 export interface LivraisonBloquee {
   expId: string;
+  site: string;
+  posteEmail: string;
+  posteNom: string;
   numCmd: string;
   client: string;
   zone: string;
@@ -507,12 +520,16 @@ export const nonConformites = {
     apiGet<FriseLivraison>("getFriseExpedition", { acteurEmail, expId }),
   /** Livraisons entrées sur site mais jamais sorties (heures connues, tentatives refusées, heure proposée) */
   bloquees: (acteurEmail: string, seuilH?: number) =>
-    apiGet<{ livraisons: LivraisonBloquee[]; delaiMaxMin: number }>(
+    apiGet<{ livraisons: LivraisonBloquee[]; delaiMaxMin: number; agents: AgentSortie[] }>(
       "getLivraisonsBloquees",
       seuilH ? { acteurEmail, seuilH } : { acteurEmail },
     ),
   /** Fixe l'heure de sortie réelle de livraisons restées bloquées (tracé) */
-  regulariser: (input: { acteurEmail: string; items: { expId: string; sortieAt: string }[]; commentaire: string }) =>
+  regulariser: (input: {
+    acteurEmail: string;
+    items: { expId: string; sortieAt: string; imputation?: string; imputeA?: string }[];
+    commentaire: string;
+  }) =>
     apiPost<{ ok: true; traitees: { expId: string; numCmd: string; dureeMin: number | null; enRetard: boolean }[]; ignorees: { expId: string; raison: string }[] }>(
       "regulariserSorties",
       input,

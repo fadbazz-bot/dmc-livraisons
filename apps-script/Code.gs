@@ -1663,14 +1663,14 @@ const COL_NC = {
   EXPLICATION:14, EXPLIQUE_PAR:15, EXPLIQUE_LE:16,
   CONTROLEUR_EMAIL:17, DECISION:18, DECISION_LE:19, CONTROLEUR_COMMENTAIRE:20,
   ACTION:21, ACTION_ECHEANCE:22, ACTION_FAITE_LE:23, CLOTURE_LE:24,
-  RELANCE_LE:25, HISTORIQUE:26, MOTIFS:27, IMPUTATION:28,
+  RELANCE_LE:25, HISTORIQUE:26, MOTIFS:27, IMPUTATION:28, IMPUTE_A:29,
 };
 const NC_HEADERS = ["ID","Type","ExpId","NumCmd","Client","NumExpedition","Site","Zone",
   "ResponsableEmail","CreeLe","Detail","Statut","Origine",
   "Explication","ExpliquePar","ExpliqueLe",
   "ControleurEmail","Decision","DecisionLe","ControleurCommentaire",
   "Action","ActionEcheance","ActionFaiteLe","ClotureLe",
-  "RelanceLe","Historique","Motifs","Imputation"];
+  "RelanceLe","Historique","Motifs","Imputation","ImputeA"];
 
 function ncSheet_() {
   const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
@@ -1851,6 +1851,14 @@ function ncImputation_(v) {
   return NC_IMPUTATIONS[k] ? k : "";
 }
 
+/** Nom affiché d'un compte (e-mail si inconnu). */
+function ncNomUtilisateur_(email) {
+  if (!email) return "";
+  const e = String(email).toLowerCase();
+  const u = sheetToObjects(getSheet("UTILISATEURS"), COL_USR).find(function(x) { return x.EMAIL && x.EMAIL.toLowerCase() === e; });
+  return (u && u.NOM) || String(email);
+}
+
 function ncSerialize_(n) {
   const creeLe = ncIso_(n.CREE_LE);
   const limiteJustif = creeLe ? new Date(new Date(creeLe).getTime() + CONFIG.NC_DELAI_JUSTIF_H * 3600000) : null;
@@ -1870,6 +1878,7 @@ function ncSerialize_(n) {
     explication: n.EXPLICATION || "", expliquePar: n.EXPLIQUE_PAR || "", expliqueLe: ncIso_(n.EXPLIQUE_LE) || null,
     motifs: n.MOTIFS || "",
     imputation: ncImputation_(n.IMPUTATION), imputationLabel: NC_IMPUTATIONS[ncImputation_(n.IMPUTATION)] || "",
+    imputeA: n.IMPUTE_A || "", imputeANom: ncNomUtilisateur_(n.IMPUTE_A),
     controleurEmail: n.CONTROLEUR_EMAIL || "", decision: n.DECISION || "", decisionLe: ncIso_(n.DECISION_LE) || null,
     controleurCommentaire: n.CONTROLEUR_COMMENTAIRE || "",
     action: n.ACTION || "", actionEcheance: echeance || null, actionFaiteLe: ncIso_(n.ACTION_FAITE_LE) || null,
@@ -2877,6 +2886,7 @@ function getLivraisonsBloquees(params) {
     return {
       expId: e.ID, numCmd: e.NUM_CMD_NAV_LOCAL || cmd.NUM_CMD_NAV || "", client: cmd.NOM_CLIENT || "", zone: e.ZONE || "",
       statut: e.STATUT || "", showroom: ncCategorieZone_(e.ZONE) === "showroom", plaque: e.PLAQUE || "", chauffeur: e.CHAUFFEUR || "",
+      site: cmd.SITE || zoneToSite(e.ZONE) || "", posteEmail: e.CHEF_POSTE_EMAIL || "", posteNom: e.CHEF_POSTE_EMAIL ? (noms[String(e.CHEF_POSTE_EMAIL).toLowerCase()] || e.NOM_ACTEUR_GARDE || e.CHEF_POSTE_EMAIL) : (e.NOM_ACTEUR_GARDE || ""),
       entreeAt: iso(tEntree), arriveeAt: iso(tArrivee), photosAt: iso(tPhotos), derniereActiviteAt: iso(derniereAct),
       ageH: Math.round((Date.now() - tEntree) / 360000) / 10,
       tentatives: tentatives.slice(-10), nbTentatives: tentatives.length, erreursDrive: erreursDrive,
@@ -2885,7 +2895,10 @@ function getLivraisonsBloquees(params) {
     };
   });
   liste.sort(function(a, b) { return String(a.entreeAt).localeCompare(String(b.entreeAt)); });
-  return { ok: true, livraisons: liste, delaiMaxMin: CONFIG.DELAI_MAX_MIN };
+  const agents = sheetToObjects(getSheet("UTILISATEURS"), COL_USR)
+    .filter(function(x) { return x.ACTIF && x.EMAIL && ["chef_poste", "agent_showroom"].indexOf(x.ROLE) !== -1; })
+    .map(function(x) { return { email: x.EMAIL, nom: x.NOM || x.EMAIL, role: x.ROLE, site: x.SITE || "" }; });
+  return { ok: true, livraisons: liste, delaiMaxMin: CONFIG.DELAI_MAX_MIN, agents: agents };
 }
 
 /**
@@ -2917,18 +2930,43 @@ function regulariserSorties(params) {
       const ts = new Date(t).toISOString();
       const duree = dureeMin(e.T_ENTREE_SITE, ts);
       const enRetard = duree !== null && duree > CONFIG.DELAI_MAX_MIN;
+      // Responsabilité du blocage (poste de garde / agent showroom en principe) et sort de l'alerte « attente anormale »
+      const imp = ncImputation_(it.imputation);
+      const posteImpute = imp === "garde" || imp === "showroom";
+      let cible = "";
+      if (posteImpute) {
+        cible = String(it.imputeA || e.CHEF_POSTE_EMAIL || "").trim();
+        if (!cible) throw new Error("indique la personne en cause (aucun agent enregistré à l'entrée)");
+        const cu = sheetToObjects(getSheet("UTILISATEURS"), COL_USR).find(function(x) { return x.ACTIF && x.EMAIL && x.EMAIL.toLowerCase() === cible.toLowerCase(); });
+        if (!cu) throw new Error("personne désignée inconnue ou désactivée");
+        cible = cu.EMAIL;
+      }
       updateExpCol(e.ID, COL_EXP.T_SORTIE_SITE, ts);
       updateExpCol(e.ID, COL_EXP.STATUT, enRetard ? "retard_a_justifier" : "sortie");
       addEvenement(e.ID, "SORTIE_REGULARISEE", u.EMAIL, qui, ts,
         "Sortie régularisée par " + qui + " le " + Utilities.formatDate(new Date(), "Africa/Dakar", "dd/MM/yyyy HH:mm") +
-        " — heure retenue : " + Utilities.formatDate(new Date(t), "Africa/Dakar", "dd/MM/yyyy HH:mm") + " — " + comm);
-      // Alertes « attente / blocage anormal » sans décision : elles mesuraient le blocage de saisie → annulées
+        " — heure retenue : " + Utilities.formatDate(new Date(t), "Africa/Dakar", "dd/MM/yyyy HH:mm") +
+        (imp ? " — cause : " + NC_IMPUTATIONS[imp] + (cible ? " (" + ncNomUtilisateur_(cible) + ")" : "") : "") + " — " + comm);
       const sh = ncSheet_();
-      ncRead_().filter(function(n) {
-        return n.EXP_ID === e.ID && n.TYPE === "ATTENTE" && !n.DECISION && ["ouverte", "contestee", "expliquee"].indexOf(n.STATUT) !== -1;
-      }).forEach(function(n) {
-        ncMaj_(sh, n._row, { STATUT: "cloturee", DECISION: "annulee", DECISION_LE: now(), CLOTURE_LE: now(), IMPUTATION: "systeme",
-          HISTORIQUE: ncHisto_(n.HISTORIQUE, qui, "Annulée : sortie régularisée à l'heure réelle (" + duree + " min depuis l'entrée du client). " + comm) });
+      const dureeH = Math.round((Date.now() - tEntree) / 360000) / 10;
+      let liees = ncRead_().filter(function(n) { return n.EXP_ID === e.ID && n.TYPE === "ATTENTE" && n.DECISION !== "annulee"; });
+      if (posteImpute && !liees.length) {
+        // Pas d'alerte automatique : on la crée pour que la faute soit tracée et comptée
+        ncOuvrir_("ATTENTE", e, "Sortie non enregistrée : le véhicule est resté " + dureeH + " h sans validation de sortie", { parEmail: u.EMAIL, silencieux: true, manuel: true });
+        liees = ncRead_().filter(function(n) { return n.EXP_ID === e.ID && n.TYPE === "ATTENTE" && n.DECISION !== "annulee"; });
+      }
+      liees.filter(function(n) { return !n.DECISION && ["ouverte", "contestee", "expliquee"].indexOf(n.STATUT) !== -1; }).forEach(function(n) {
+        const tsn = now();
+        if (posteImpute) {
+          ncMaj_(sh, n._row, { STATUT: "cloturee", DECISION: "acceptee", DECISION_LE: tsn, CLOTURE_LE: tsn, CONTROLEUR_EMAIL: u.EMAIL,
+            CONTROLEUR_COMMENTAIRE: comm, IMPUTATION: imp, IMPUTE_A: cible,
+            HISTORIQUE: ncHisto_(n.HISTORIQUE, qui, "Responsabilité imputée à " + ncNomUtilisateur_(cible) + " (" + NC_IMPUTATIONS[imp] + ") — sortie régularisée (" + duree + " min depuis l'entrée du client). " + comm) });
+        } else if (imp === "magasin" || !imp) {
+          ncMaj_(sh, n._row, { HISTORIQUE: ncHisto_(n.HISTORIQUE, qui, "Sortie régularisée (" + duree + " min depuis l'entrée du client) — l'alerte reste à expliquer par le magasin. " + comm) });
+        } else {
+          ncMaj_(sh, n._row, { STATUT: "cloturee", DECISION: "annulee", DECISION_LE: tsn, CLOTURE_LE: tsn, IMPUTATION: imp,
+            HISTORIQUE: ncHisto_(n.HISTORIQUE, qui, "Annulée : sortie régularisée à l'heure réelle (" + duree + " min depuis l'entrée du client). Cause : " + NC_IMPUTATIONS[imp] + ". " + comm) });
+        }
       });
       coloriserLigneExp(e.ID, enRetard);
       if (enRetard) ncOuvrir_("RETARD", e, "Livraison en " + duree + " min depuis l'entrée du client (seuil " + CONFIG.DELAI_MAX_MIN + " min) — sortie régularisée", { parEmail: u.EMAIL, silencieux: true });
@@ -4069,6 +4107,7 @@ function getKpi(params) {
   exps.forEach(e => { idsExp[e.ID] = true; });
   const ncsExp = ncRead_().filter(n => n.EXP_ID && idsExp[n.EXP_ID]);
   const excuses = {};      // expId → imputation validée (garde, showroom, client…)
+  const imputeA = {};      // expId → e-mail de la personne désignée (poste de garde / agent showroom)
   const sansPhotos = {};   // expId → sortie sans photos (dérogation du poste de garde)
   const causes = {};       // imputation → nombre de retards/attentes expliqués
   ncsExp.forEach(n => {
@@ -4076,7 +4115,10 @@ function getKpi(params) {
     if (n.TYPE === "SORTIE_SANS_PHOTOS") sansPhotos[n.EXP_ID] = true;
     if ((n.TYPE === "RETARD" || n.TYPE === "ATTENTE") && n.DECISION && n.DECISION !== "annulee") {
       causes[imp] = (causes[imp] || 0) + 1;
-      if (n.DECISION === "acceptee" && imp !== "magasin") excuses[n.EXP_ID] = imp;
+      if (n.DECISION === "acceptee" && imp !== "magasin") {
+        excuses[n.EXP_ID] = imp;
+        if (n.IMPUTE_A && (imp === "garde" || imp === "showroom")) imputeA[n.EXP_ID] = String(n.IMPUTE_A).toLowerCase();
+      }
     }
   });
   const parCause = Object.keys(causes).map(k => ({ cause: k, label: k === "magasin" ? "Le magasin" : (NC_IMPUTATIONS[k] || k), count: causes[k] }))
@@ -4113,14 +4155,17 @@ function getKpi(params) {
   const regularisees = {};
   sheetToObjects(getSheet("EVENEMENTS"), COL_EVT).forEach(ev => { if (ev.JALON === "SORTIE_REGULARISEE") regularisees[ev.EXP_ID] = true; });
   avecSortie.forEach(e => {
-    const email = String(e.CHEF_POSTE_EMAIL || "").toLowerCase();
+    const posteFautif = excuses[e.ID] === "garde" || excuses[e.ID] === "showroom";
+    const email = (posteFautif && imputeA[e.ID]) || String(e.CHEF_POSTE_EMAIL || "").toLowerCase();
     if (!email) return;
-    if (regularisees[e.ID]) return; // sortie régularisée après un blocage de saisie : ne compte ni pour ni contre le poste
+    // Sortie régularisée après un blocage de saisie : ne compte ni pour ni contre le poste, sauf si le coordinateur
+    // lui a imputé le blocage (la faute est alors portée par la personne désignée).
+    if (regularisees[e.ID] && !posteFautif) return;
     const g = parGarde[email] || (parGarde[email] = { email, total: 0, fautes: 0, sortiesLentes: 0, derogations: 0, ncImputees: 0, sorties: [] });
     g.total++;
     let faute = false;
     const tp = dernierePhoto[e.ID], ts = friseMs_(e.T_SORTIE_SITE);
-    if (tp && ts && ts >= tp) {
+    if (tp && ts && ts >= tp && !regularisees[e.ID]) {
       const m = Math.round((ts - tp) / 60000);
       g.sorties.push(m);
       if (m > CONFIG.GARDE_SORTIE_MAX_MIN) { g.sortiesLentes++; faute = true; }
